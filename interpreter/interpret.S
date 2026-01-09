@@ -25,46 +25,59 @@
     mov X, qword ptr [rbx] ; \
     lea rbx, [rbx - 8]
 
-#define TYPE_DISPATCH(VAL, INT_LABEL, BOOL_LABEL, CHAR_LABEL, NULL_LABEL) \
-    cmp VAL, TAGGED_NULL ; \
-    je NULL_LABEL ; \
-    cmp VAL, TRUE ; \
-    je BOOL_LABEL ; \
-    cmp VAL, FALSE ; \
-    je BOOL_LABEL ; \
-    PUSH(VAL) ; \
-    and VAL, INT_MASK ; \
-    test VAL, VAL ; \
-    POP(VAL) ; \
-    je INT_LABEL ; \
-    PUSH(VAL) ; \
-    sub VAL, TAGGED_CHAR_MIN ; \
-    cmp VAL, TAGGED_CHAR_MAX ; \
-    POP(VAL) ; \
-    jbe CHAR_LABEL ; \
-    ud2
+#define JMP_IF_NULL(R64, LABEL) \
+    cmp R64, TAGGED_NULL ; \
+    je LABEL
 
-#define TAG_INT(VAL) \
-    shl VAL, 2
+#define JMP_IF_INT(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, INT_MASK ; \
+    test R64, R64 ; \
+    POP(R64) ; \
+    je LABEL
 
-#define UNTAG_INT(VAL) \
-    shr VAL, 2
+#define JMP_IF_BOOL(R64, LABEL) \
+    cmp R64, TRUE ; \
+    je LABEL ; \
+    cmp R64, FALSE ; \
+    je LABEL
 
-#define TAG_BOOL(VAL) \
-    shl VAL, 7 ; \
-    or VAL, BOOL_SUFFIX
+#define JMP_IF_CHAR(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, CHAR_MASK ; \
+    cmp R64, CHAR_SUFFIX ; \
+    POP(R64) ; \
+    PUSH(R64) ; \
+    cmovne R64, qword ptr [rip + zero_location] ; \
+    sub R64, TAGGED_CHAR_MIN ; \
+    cmp R64, TAGGED_CHAR_MAX - TAGGED_CHAR_MIN ; \
+    POP(R64) ; \
+    jbe LABEL
 
-#define UNTAG_BOOL(VAL) \
-    shr VAL, 7
+#define TAG_INT(R64) \
+    shl R64, 2
 
-#define UNTAG_CHAR(VAL) \
-    shr VAL, 8
+#define UNTAG_INT(R64) \
+    shr R64, 2
 
-#define TAG_CHAR(VAL) \
-    shl VAL, 8 ; \
-    or VAL, CHAR_SUFFIX
+#define TAG_BOOL(R64) \
+    shl R64, 7 ; \
+    or R64, BOOL_SUFFIX
+
+#define UNTAG_BOOL(R64) \
+    shr R64, 7
+
+#define UNTAG_CHAR(R64) \
+    shr R64, 8
+
+#define TAG_CHAR(R64) \
+    shl R64, 8 ; \
+    or R64, CHAR_SUFFIX
 
 .section .text
+
+zero_location:
+    .quad 0
 
 .global interpret
 interpret:
@@ -78,78 +91,78 @@ interpret:
 add1:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
-1: // int
+    JMP_IF_INT(rax, 1f)
+    ud2
+1:
     UNTAG_INT(rax)
     inc rax
     TAG_INT(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.sub1
 .global sub1
 sub1:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
-1: // int
+    JMP_IF_INT(rax, 1f)
+    ud2
+1:
     UNTAG_INT(rax)
     dec rax
     TAG_INT(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.add
 .global add
 add:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
-1: // int
+    JMP_IF_INT(rax, 1f)
+    ud2
+1:
     POP(rcx)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
-1: // int
+    JMP_IF_INT(rcx, 1f)
+    ud2
+1:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
     add rax, rcx
     TAG_INT(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.sub
 .global sub
 sub:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
-1: // int
+    JMP_IF_INT(rax, 1f)
+    ud2
+1:
     POP(rcx)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
-1: // int
+    JMP_IF_INT(rcx, 1f)
+    ud2
+1:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
     sub rax, rcx
     TAG_INT(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.mul
 .global mul
 mul:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rax, 1f)
+    ud2
 1: // int
     POP(rcx)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rcx, 1f)
+    ud2
 1: // int
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
@@ -157,18 +170,18 @@ mul:
     TAG_INT(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.lt
 .global lt
 lt:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rax, 1f)
+    ud2
 1: // int
     POP(rcx)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rcx, 1f)
+    ud2
 1: // int
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
@@ -178,18 +191,18 @@ lt:
     TAG_BOOL(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.eq
 .global eq 
 eq:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rax, 1f)
+    ud2
 1: // int
     POP(rcx)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rcx, 1f)
+    ud2
 1: // int
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
@@ -199,8 +212,6 @@ eq:
     TAG_BOOL(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.load64
 .global load64
@@ -214,7 +225,8 @@ load64:
 zeroq:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rax, 1f)
+    ud2
 1: // int
     UNTAG_INT(rax)
     test rax, rax
@@ -223,20 +235,17 @@ zeroq:
     TAG_BOOL(rax)
     PUSH(rax)
     ret
-2: // not int
-    ud2
 
 .section .text.integerq
 .global integerq
 integerq:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 2f, 2f)
+    JMP_IF_INT(rax, 1f)
+    PUSH(FALSE)
+    ret
 1: // int
     PUSH(TRUE)
-    ret
-2: // not int
-    PUSH(FALSE)
     ret
 
 .section .text.booleanq
@@ -244,12 +253,11 @@ integerq:
 booleanq:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 2f, 1f, 2f, 2f)
+    JMP_IF_BOOL(rax, 1f)
+    PUSH(FALSE)
+    ret
 1: // bool
     PUSH(TRUE)
-    ret
-2: // not bool
-    PUSH(FALSE)
     ret
 
 .section .text.charq
@@ -257,12 +265,11 @@ booleanq:
 charq:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 2f, 2f, 1f, 2f)
+    JMP_IF_CHAR(rax, 1f)
+    PUSH(FALSE)
+    ret
 1: // char
     PUSH(TRUE)
-    ret
-2: // not char
-    PUSH(FALSE)
     ret
 
 .section .text.nullq
@@ -270,12 +277,11 @@ charq:
 nullq:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 2f, 2f, 2f, 1f)
+    JMP_IF_NULL(rax, 1f)
+    PUSH(FALSE)
+    ret
 1: // '()
     PUSH(TRUE)
-    ret
-2: // not '()
-    PUSH(FALSE)
     ret
 
 .section .text.not
@@ -283,8 +289,7 @@ nullq:
 not:
     add rsp, 8 // Skip immediate
     POP(rax)
-    TYPE_DISPATCH(rax, 1f, 2f, 1f, 1f)
-1: // not bool
+    JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
     ret
 2: // bool
@@ -292,6 +297,36 @@ not:
     not rax
     and rax, 1
     TAG_BOOL(rax)
+    PUSH(rax)
+    ret
+
+.section .text.chartoint
+.global chartoint
+chartoint:
+    add rsp, 8 // Skip immediate
+    POP(rax)
+    JMP_IF_CHAR(rax, 1f)
+    ud2
+1: // char
+    UNTAG_CHAR(rax)
+    TAG_INT(rax)
+    PUSH(rax)
+    ret
+
+.section .text.inttochar
+.global inttochar
+inttocar:
+    add rsp, 8 // Skip immediate
+    POP(rax)
+    JMP_IF_INT(rax, 1f)
+    ud2
+1: // int
+    UNTAG_INT(rax)
+    cmp rax, 128
+    jb 1f
+    ud2
+1: // in range
+    TAG_CHAR(rax)
     PUSH(rax)
     ret
 

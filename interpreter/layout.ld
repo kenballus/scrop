@@ -77,4 +77,14 @@ SECTIONS {
     .text.charq : {
         *(charq)
     }
+
+    . = 0xc701000;
+    .text.chartoint : {
+        *(chartoint)
+    }
+
+    . = 0x170c000;
+    .text.inttochar : {
+        *(inttochar)
+    }
 }

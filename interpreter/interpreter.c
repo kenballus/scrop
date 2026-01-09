@@ -44,8 +44,8 @@ void print_value_and_exit(uint64_t v) {
         puts("#t");
     } else if (v == FALSE) {
         puts("#f");
-    } else if (TAGGED_CHAR_MIN <= v && v <= TAGGED_CHAR_MAX) {
-        putchar(v >> 8);
+    } else if ((v & CHAR_MASK) == CHAR_SUFFIX) {
+        printf("#\\%c\n", (char)(v >> 8));
     } else {
         printf("Exit value is malformed: %" PRIu64 "\n", v);
         exit(EXIT_FAILURE);

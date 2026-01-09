@@ -83,6 +83,10 @@ def main() -> None:
                 opcode = 0x4321000
             case ["NOT"]:
                 opcode = 0x7777000
+            case ["INTTOCHAR"]:
+                opcode = 0x170c000
+            case ["CHARTOINT"]:
+                opcode = 0xc701000
             case _:
                 raise ValueError(f"Couldn't parse line {line}")
         os.write(1, opcode.to_bytes(8, "little") + serialize_immediate(immediate))
