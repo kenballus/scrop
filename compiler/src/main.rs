@@ -178,11 +178,15 @@ fn consume_bool(input: &[u8]) -> Option<(bool, &[u8])> {
 }
 
 fn consume_whitespace(input: &[u8]) -> &[u8] {
-    let mut bytes_consumed: usize = 0;
-    while input[bytes_consumed].is_ascii_whitespace() {
-        bytes_consumed += 1;
+    if input.is_empty() {
+        input
+    } else {
+        let mut bytes_consumed: usize = 0;
+        while input[bytes_consumed].is_ascii_whitespace() {
+            bytes_consumed += 1;
+        }
+        &input[bytes_consumed..]
     }
-    &input[bytes_consumed..]
 }
 
 fn consume_expression<'a>(mut input: &'a [u8]) -> Option<(Expression<'a>, &'a [u8])> {
