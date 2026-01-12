@@ -33,7 +33,7 @@ def parse_immediate(s: str) -> Value:
         if len(char_data) == 1 and char_data.isascii():
             return Char(char_data)
         elif len(char_data) == 3 and char_data[0] == "x" and char_data.isascii():
-            return Char(chr(int(s[1:], 16)))
+            return Char(chr(int(char_data[1:], 16)))
         raise ValueError(f"Couldn't parse character constant {s} (not all are supported yet)")
 
     raise ValueError(f"Couldn't parse immediate {s}")
