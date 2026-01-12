@@ -1,9 +1,9 @@
 #define _GNU_SOURCE
 
-#include <inttypes.h> // for PRIu64
+#include <inttypes.h> // for PRIu64, PRIx64
 #include <signal.h>   // for sigset_t, sigfillset, sigprocmask, SIG_SETMASK
 #include <stddef.h>   // for NULL
-#include <stdint.h>   // for uint64_t
+#include <stdint.h>   // for uint64_t, intmax_t
 #include <stdio.h>    // for getdelim, stdin, EOF, printf, stderr, fputs
 #include <stdlib.h>   // for EXIT_*, exit
 #include <sys/mman.h> // for mmap, PROT_*, MAP_*
@@ -16,7 +16,7 @@ bool is_valid_opcode(uint64_t const opcode) {
     static uint64_t const OPCODES[] = {
         0xadd1000, 0x50b1000, 0xd0d0000, 0x10ad000, 0x0add000, 0x050b000,
         0x0a55000, 0x1001000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
-        0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000, 0x170c000};
+        0xca7000, 0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000, 0x170c000, 0x3e3e000};
     for (size_t i = 0; i < _Countof(OPCODES); i++) {
         if (opcode == OPCODES[i]) {
             return true;
@@ -25,18 +25,18 @@ bool is_valid_opcode(uint64_t const opcode) {
     return false;
 }
 
-bool is_valid_bytecode(uint64_t const *const bytecode,
+void validate_bytecode(uint64_t const *const bytecode,
                        ssize_t const bytecode_size) {
     if (bytecode_size < 0 || bytecode_size % 16) {
-        return false;
+        fprintf(stderr, "Invalid bytecode size %jd\n", (intmax_t)bytecode_size);
+        exit(EXIT_FAILURE);
     }
     ssize_t num_bytecode_words = bytecode_size / 16;
     for (ssize_t i = 0; i < num_bytecode_words; i++) {
         if (!is_valid_opcode(bytecode[i * 2])) {
-            return false;
+            fprintf(stderr, "Invalid opcode %" PRIx64 "\n", bytecode[i * 2]);
         }
     }
-    return true;
 }
 
 int main(void) {
@@ -49,10 +49,7 @@ int main(void) {
     size_t bytecode_allocation_size;
     ssize_t bytes_read =
         getdelim((char **)&bytecode, &bytecode_allocation_size, EOF, stdin);
-    if (!is_valid_bytecode(bytecode, bytes_read)) {
-        fputs("Invalid bytecode.\n", stderr);
-        return EXIT_FAILURE;
-    }
+    validate_bytecode(bytecode, bytes_read);
 
     void *const stack = mmap(NULL, STACK_SIZE_IN_BYTES, PROT_READ | PROT_WRITE,
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);

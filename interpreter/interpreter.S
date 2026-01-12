@@ -234,6 +234,22 @@ eq:
     PUSH(rax)
     ret
 
+.section .text.eqp
+.global eqp
+eqp:
+    add rsp, 8 // Skip immediate
+    POP(rax)
+    POP(rcx)
+    cmp rax, rcx
+    je 1f
+    mov rax, FALSE
+    PUSH(rax)
+    ret
+1:
+    mov rax, TRUE
+    PUSH(rax)
+    ret
+
 .section .text.load64
 .global load64
 load64:
@@ -241,9 +257,9 @@ load64:
     PUSH(rax) // Push it to interpreter stack
     ret
 
-.section .text.zeroq
-.global zeroq
-zeroq:
+.section .text.zerop
+.global zerop
+zerop:
     add rsp, 8 // Skip immediate
     POP(rax)
     JMP_IF_INT(rax, 1f)
@@ -257,9 +273,9 @@ zeroq:
     PUSH(rax)
     ret
 
-.section .text.integerq
-.global integerq
-integerq:
+.section .text.integerp
+.global integerp
+integerp:
     add rsp, 8 // Skip immediate
     POP(rax)
     JMP_IF_INT(rax, 1f)
@@ -269,9 +285,9 @@ integerq:
     PUSH(TRUE)
     ret
 
-.section .text.booleanq
-.global booleanq
-booleanq:
+.section .text.booleanp
+.global booleanp
+booleanp:
     add rsp, 8 // Skip immediate
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
@@ -281,9 +297,9 @@ booleanq:
     PUSH(TRUE)
     ret
 
-.section .text.charq
-.global charq
-charq:
+.section .text.charp
+.global charp
+charp:
     add rsp, 8 // Skip immediate
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
@@ -293,9 +309,9 @@ charq:
     PUSH(TRUE)
     ret
 
-.section .text.nullq
-.global nullq
-nullq:
+.section .text.nullp
+.global nullp
+nullp:
     add rsp, 8 // Skip immediate
     POP(rax)
     JMP_IF_NULL(rax, 1f)
@@ -350,6 +366,26 @@ inttocar:
     TAG_CHAR(rax)
     PUSH(rax)
     ret
+
+.section .text.cjump
+.global cjump
+cjump:
+    pop rax
+    JMP_IF_INT(rax, 1f)
+    ud2
+1:
+    UNTAG_INT(rax)
+    POP(rcx)
+    JMP_IF_BOOL(rcx, 1f)
+    ud2
+1:
+    cmp rcx, FALSE
+    je 1f
+    shl rax, 4
+    lea rsp, [rsp + rax]
+1:
+    ret
+
 
 .section .text.jump
 .global jump

@@ -3,6 +3,11 @@ SECTIONS {
     .text : {
     }
 
+    . = 0x3e3e000;
+    .text.eqp : {
+        *(eqp)
+    }
+
     . = 0xadd1000;
     .text.add1 : {
         *(add1)
@@ -49,23 +54,23 @@ SECTIONS {
     }
 
     . = 0xeeee000;
-    .text.zeroq : {
-        *(zeroq)
+    .text.zerop : {
+        *(zerop)
     }
 
     . = 0x1234000;
-    .text.integerq : {
-        *(integerq)
+    .text.integerp : {
+        *(integerp)
     }
 
     . = 0xb001000;
-    .text.booleanq : {
-        *(booleanq)
+    .text.booleanp : {
+        *(booleanp)
     }
 
     . = 0x4321000;
-    .text.nullq : {
-        *(nullq)
+    .text.nullp : {
+        *(nullp)
     }
 
     . = 0x7777000;
@@ -74,8 +79,8 @@ SECTIONS {
     }
 
     . = 0xcaca000;
-    .text.charq : {
-        *(charq)
+    .text.charp : {
+        *(charp)
     }
 
     . = 0xc701000;
@@ -91,5 +96,10 @@ SECTIONS {
     . = 0x70ad000;
     .text.jump : {
         *(jump)
+    }
+
+    . = 0xca7000;
+    .text.cjump : {
+        *(cjump)
     }
 }

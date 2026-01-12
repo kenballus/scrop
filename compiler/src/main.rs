@@ -8,6 +8,7 @@ enum Expression<'a> {
     Symbol(&'a [u8]),
     PrimitiveFnCall(PrimitiveFnName, Vec<Expression<'a>>),
     Null,
+    If(Vec<Expression<'a>>),
 }
 
 #[derive(Debug)]
@@ -19,6 +20,7 @@ enum PrimitiveFnName {
     Mul,
     Lt,
     Eq,
+    EqP,
     ZeroP,
     IntegerP,
     BooleanP,
@@ -45,6 +47,7 @@ impl PrimitiveFnName {
             PrimitiveFnName::Mul => PrimitiveFnArity::NaryWithDefaultIntInput(2, 1),
             PrimitiveFnName::Lt => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
             PrimitiveFnName::Eq => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
+            PrimitiveFnName::EqP => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
             PrimitiveFnName::ZeroP => PrimitiveFnArity::Unary,
             PrimitiveFnName::IntegerP => PrimitiveFnArity::Unary,
             PrimitiveFnName::BooleanP => PrimitiveFnArity::Unary,
@@ -146,26 +149,47 @@ fn parse_primitive_fn_name(input: &[u8]) -> Option<PrimitiveFnName> {
         b"not" => Some(PrimitiveFnName::Not),
         b"char->integer" => Some(PrimitiveFnName::CharToInt),
         b"integer->char" => Some(PrimitiveFnName::IntToChar),
+        b"eq?" => Some(PrimitiveFnName::EqP),
         _ => None,
     }
 }
 
 fn consume_primitive_fn_call<'a>(
-    input: &'a [u8],
+    mut input: &'a [u8],
 ) -> Option<((PrimitiveFnName, Vec<Expression<'a>>), &'a [u8])> {
-    if input.is_empty() || input[0] != b'(' {
+    if input.is_empty() || !input.starts_with(b"(") {
         return None;
     }
-    let rem0 = &input[1..];
-    if let Some((sym, rem1)) = consume_symbol(rem0) {
-        let (args, rem2) = consume_expressions(rem1);
-        let rem3 = consume_whitespace(rem2);
-        if rem3.is_empty() || rem3[0] != b')' {
+    input = &input[1..];
+    if let Some((sym, input)) = consume_symbol(input) {
+        let (args, input) = consume_expressions(input);
+        let input = consume_whitespace(input);
+        if input.is_empty() || !input.starts_with(b")") {
             None
         } else if let Some(name) = parse_primitive_fn_name(sym) {
-            Some(((name, args), &rem3[1..]))
+            Some(((name, args), &input[1..]))
         } else {
             None
+        }
+    } else {
+        panic!("Invalid function invocation")
+    }
+}
+
+fn consume_if<'a>(input: &'a [u8]) -> Option<(Vec<Expression<'a>>, &'a [u8])> {
+    if input.is_empty() || !input.starts_with(b"(") {
+        return None;
+    }
+    let input = &input[1..];
+    if let Some((sym, input)) = consume_symbol(input) {
+        let (args, input) = consume_expressions(input);
+        let input = consume_whitespace(input);
+        if input.is_empty() || !input.starts_with(b")") || sym != b"if" {
+            None
+        } else if matches!(args.len(), 2|3) {
+            Some(((args), &input[1..]))
+        } else {
+            panic!("Invalid argument count to if")
         }
     } else {
         panic!("Invalid function invocation")
@@ -230,6 +254,8 @@ fn consume_expression<'a>(mut input: &'a [u8]) -> Option<(Expression<'a>, &'a [u
         Some((Expression::Bool(v), rem))
     } else if let Some((v, rem)) = consume_symbol(input) {
         Some((Expression::Symbol(v), rem))
+    } else if let Some((v, rem)) = consume_if(input) {
+        Some((Expression::If(v), rem))
     } else if let Some(((name, args), rem)) = consume_primitive_fn_call(input) {
         Some((Expression::PrimitiveFnCall(name, args), rem))
     } else if let Some((v, rem)) = consume_character(input) {
@@ -270,6 +296,7 @@ fn lower(ast: Vec<Expression<'_>>) -> Vec<String> {
                     PrimitiveFnName::Mul => "MUL",
                     PrimitiveFnName::Lt => "LT",
                     PrimitiveFnName::Eq => "EQ",
+                    PrimitiveFnName::EqP => "EQP",
                     PrimitiveFnName::ZeroP => "ZEROP",
                     PrimitiveFnName::IntegerP => "INTEGERP",
                     PrimitiveFnName::BooleanP => "BOOLEANP",
@@ -330,6 +357,31 @@ fn lower(ast: Vec<Expression<'_>>) -> Vec<String> {
                 }
             }
             Expression::Null => result.push("LOAD64 NULL".to_owned()),
+            Expression::If(mut v) => {
+                // cond
+                result.append(&mut lower(vec![v.remove(0)]));
+                result.push("LOAD64 #f".to_owned());
+                result.push("EQP".to_owned());
+
+                // cons
+                let mut cons_code = lower(vec![v.remove(0)]);
+
+                // alt
+                let alt_code_opt = match v.pop() {
+                    Some(x) => Some(lower(vec![x])),
+                    None => None,
+                };
+
+                if let Some(ref alt_code) = alt_code_opt {
+                    cons_code.push("JUMP ".to_owned() + &alt_code.len().to_string())
+                }
+                result.push("CJUMP ".to_owned() + &cons_code.len().to_string());
+                result.append(&mut cons_code);
+
+                if let Some(mut alt_code) = alt_code_opt {
+                    result.append(&mut alt_code);
+                }
+            }
             Expression::Symbol(_) => todo!(),
         };
     }
@@ -340,7 +392,7 @@ fn main() {
     let mut input = Vec::new();
     let _bytes_read = stdin().read_to_end(&mut input);
     let (ast, rem) = consume_expressions(&input[..]);
-    dbg!("{}", &ast);
+    dbg!(&ast);
     if !rem.is_empty() {
         panic!("Leftover data: {:?}", rem);
     }

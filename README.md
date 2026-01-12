@@ -20,7 +20,7 @@ python.
 interpreter for the bytecode.
 basically just a rop executor.
 
-c and x86\_64 asm.
+x86\_64 asm and a little bit of c.
 
 ## building
 
@@ -36,11 +36,64 @@ cd interpreter \
 ## example
 
 ```sh
-printf '(integer->char (+ 1 (char->integer #\\a)))' \
+printf '(if (= 10 (+ 1 2 3 4)) (integer->char 97) (integer->char 65))' \
     | ./compiler/target/debug/compiler \
     | uv run assembler/main.py \
     | ./interpreter/interpreter
 ```
+
+### stdout
 ```
-#\b
+#\a
+```
+
+### stderr
+```
+&ast = [
+    If(
+        [
+            PrimitiveFnCall(
+                Eq,
+                [
+                    Int(
+                        10,
+                    ),
+                    PrimitiveFnCall(
+                        Add,
+                        [
+                            Int(
+                                1,
+                            ),
+                            Int(
+                                2,
+                            ),
+                            Int(
+                                3,
+                            ),
+                            Int(
+                                4,
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            PrimitiveFnCall(
+                IntToChar,
+                [
+                    Int(
+                        97,
+                    ),
+                ],
+            ),
+            PrimitiveFnCall(
+                IntToChar,
+                [
+                    Int(
+                        65,
+                    ),
+                ],
+            ),
+        ],
+    ),
+]
 ```

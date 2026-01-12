@@ -62,6 +62,11 @@ def main() -> None:
             case ["JUMP", v]:
                 opcode = 0x70ad000
                 immediate = parse_immediate(v)
+            case ["CJUMP", v]:
+                opcode = 0xca7000
+                immediate = parse_immediate(v)
+            case ["EQP"]:
+                opcode = 0x3e3e000
             case ["ADD1"]:
                 opcode = 0xADD1000
             case ["SUB1"]:
