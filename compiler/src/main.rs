@@ -1,4 +1,3 @@
-use std::fmt::{Display, Error, Formatter};
 use std::io::{Read, stdin};
 
 #[derive(Debug)]
@@ -7,52 +6,59 @@ enum Expression<'a> {
     Bool(bool),
     Char(u8),
     Symbol(&'a [u8]),
-    FnCall(&'a [u8], Vec<Expression<'a>>),
+    PrimitiveFnCall(PrimitiveFnName, Vec<Expression<'a>>),
     Null,
 }
 
-impl<'a> Expression<'a> {
-    fn fmt_with_depth(&self, _f: &mut Formatter<'_>, depth: usize) -> String {
-        const INDENT_SIZE: usize = 4;
-        let s = match self {
-            Expression::Int(x) => &x.to_string(),
-            Expression::Bool(x) => {
-                if *x {
-                    "#t"
-                } else {
-                    "#f"
-                }
-            }
-            Expression::Symbol(x) => str::from_utf8(x).expect("Invalid utf8 in symbol, somehow?"),
-            Expression::FnCall(name, args) => {
-                &("(\n".to_owned()
-                    + &" ".repeat((depth + 1) * INDENT_SIZE)
-                    + str::from_utf8(name).expect("Invalid utf8 in fn name, somehow?")
-                    + "\n"
-                    + &args
-                        .iter()
-                        .map(|arg| arg.fmt_with_depth(_f, depth + 1))
-                        .collect::<Vec<String>>()
-                        .join("\n")
-                    + "\n"
-                    + &" ".repeat(depth * INDENT_SIZE)
-                    + ")")
-            }
-            Expression::Char(x) => &("#\\".to_owned() + format!("x{:x}", x).as_str()),
-            Expression::Null => "'()",
-        };
-        " ".repeat(depth * INDENT_SIZE) + s
-    }
+#[derive(Debug)]
+enum PrimitiveFnName {
+    Add1,
+    Sub1,
+    Add,
+    Sub,
+    Mul,
+    Lt,
+    Eq,
+    ZeroP,
+    IntegerP,
+    BooleanP,
+    CharP,
+    NullP,
+    Not,
+    CharToInt,
+    IntToChar,
 }
 
-impl<'a> Display for Expression<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        self.fmt_with_depth(f, 0).fmt(f)
+enum PrimitiveFnArity {
+    Unary,
+    NaryWithDefaultBoolResult(usize, bool), // implementation_arity, default_result
+    NaryWithDefaultIntInput(usize, u64),    // implementation_arity, default_input
+}
+
+impl PrimitiveFnName {
+    fn arity(&self) -> PrimitiveFnArity {
+        match self {
+            PrimitiveFnName::Add1 => PrimitiveFnArity::Unary,
+            PrimitiveFnName::Sub1 => PrimitiveFnArity::Unary,
+            PrimitiveFnName::Add => PrimitiveFnArity::NaryWithDefaultIntInput(2, 0),
+            PrimitiveFnName::Sub => PrimitiveFnArity::NaryWithDefaultIntInput(2, 0),
+            PrimitiveFnName::Mul => PrimitiveFnArity::NaryWithDefaultIntInput(2, 1),
+            PrimitiveFnName::Lt => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
+            PrimitiveFnName::Eq => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
+            PrimitiveFnName::ZeroP => PrimitiveFnArity::Unary,
+            PrimitiveFnName::IntegerP => PrimitiveFnArity::Unary,
+            PrimitiveFnName::BooleanP => PrimitiveFnArity::Unary,
+            PrimitiveFnName::CharP => PrimitiveFnArity::Unary,
+            PrimitiveFnName::NullP => PrimitiveFnArity::Unary,
+            PrimitiveFnName::Not => PrimitiveFnArity::Unary,
+            PrimitiveFnName::CharToInt => PrimitiveFnArity::Unary,
+            PrimitiveFnName::IntToChar => PrimitiveFnArity::Unary,
+        }
     }
 }
 
 fn check_for_delimiter(input: &[u8]) -> bool {
-    input.is_empty() || input[0].is_ascii_whitespace() || input[0] == b')'
+    input.is_empty() || input[0].is_ascii_whitespace() || matches!(input[0], b')' | b'(')
 }
 
 fn is_ascii_printable(v: u8) -> bool {
@@ -123,21 +129,46 @@ fn consume_null(input: &[u8]) -> Option<&[u8]> {
     }
 }
 
-fn consume_fn_call<'a>(input: &'a [u8]) -> Option<((&'a [u8], Vec<Expression<'a>>), &'a [u8])> {
+fn parse_primitive_fn_name(input: &[u8]) -> Option<PrimitiveFnName> {
+    match input {
+        b"add1" => Some(PrimitiveFnName::Add1),
+        b"sub1" => Some(PrimitiveFnName::Sub1),
+        b"+" => Some(PrimitiveFnName::Add),
+        b"-" => Some(PrimitiveFnName::Sub),
+        b"*" => Some(PrimitiveFnName::Mul),
+        b"<" => Some(PrimitiveFnName::Lt),
+        b"=" => Some(PrimitiveFnName::Eq),
+        b"zero?" => Some(PrimitiveFnName::ZeroP),
+        b"integer?" => Some(PrimitiveFnName::IntegerP),
+        b"boolean?" => Some(PrimitiveFnName::BooleanP),
+        b"char?" => Some(PrimitiveFnName::CharP),
+        b"null?" => Some(PrimitiveFnName::NullP),
+        b"not" => Some(PrimitiveFnName::Not),
+        b"char->integer" => Some(PrimitiveFnName::CharToInt),
+        b"integer->char" => Some(PrimitiveFnName::IntToChar),
+        _ => None,
+    }
+}
+
+fn consume_primitive_fn_call<'a>(
+    input: &'a [u8],
+) -> Option<((PrimitiveFnName, Vec<Expression<'a>>), &'a [u8])> {
     if input.is_empty() || input[0] != b'(' {
         return None;
     }
     let rem0 = &input[1..];
-    if let Some((name, rem1)) = consume_symbol(rem0) {
+    if let Some((sym, rem1)) = consume_symbol(rem0) {
         let (args, rem2) = consume_expressions(rem1);
         let rem3 = consume_whitespace(rem2);
         if rem3.is_empty() || rem3[0] != b')' {
             None
-        } else {
+        } else if let Some(name) = parse_primitive_fn_name(sym) {
             Some(((name, args), &rem3[1..]))
+        } else {
+            None
         }
     } else {
-        panic!("Invalid function name")
+        panic!("Invalid function invocation")
     }
 }
 
@@ -199,8 +230,8 @@ fn consume_expression<'a>(mut input: &'a [u8]) -> Option<(Expression<'a>, &'a [u
         Some((Expression::Bool(v), rem))
     } else if let Some((v, rem)) = consume_symbol(input) {
         Some((Expression::Symbol(v), rem))
-    } else if let Some(((name, args), rem)) = consume_fn_call(input) {
-        Some((Expression::FnCall(name, args), rem))
+    } else if let Some(((name, args), rem)) = consume_primitive_fn_call(input) {
+        Some((Expression::PrimitiveFnCall(name, args), rem))
     } else if let Some((v, rem)) = consume_character(input) {
         Some((Expression::Char(v), rem))
     } else if let Some(rem) = consume_null(input) {
@@ -230,31 +261,73 @@ fn lower(ast: Vec<Expression<'_>>) -> Vec<String> {
                 result.push("LOAD64 #\\".to_owned() + format!("x{:x}", x).as_str())
             }
             Expression::Bool(x) => result.push("LOAD64 ".to_owned() + if x { "#t" } else { "#f" }),
-            Expression::FnCall(name, args) => {
-                for arg in args {
-                    result.append(&mut lower(vec![arg]));
+            Expression::PrimitiveFnCall(name, mut args) => {
+                let name_string = (match name {
+                    PrimitiveFnName::Add1 => "ADD1",
+                    PrimitiveFnName::Sub1 => "SUB1",
+                    PrimitiveFnName::Add => "ADD",
+                    PrimitiveFnName::Sub => "SUB",
+                    PrimitiveFnName::Mul => "MUL",
+                    PrimitiveFnName::Lt => "LT",
+                    PrimitiveFnName::Eq => "EQ",
+                    PrimitiveFnName::ZeroP => "ZEROP",
+                    PrimitiveFnName::IntegerP => "INTEGERP",
+                    PrimitiveFnName::BooleanP => "BOOLEANP",
+                    PrimitiveFnName::CharP => "CHARP",
+                    PrimitiveFnName::NullP => "NULLP",
+                    PrimitiveFnName::Not => "NOT",
+                    PrimitiveFnName::CharToInt => "CHARTOINT",
+                    PrimitiveFnName::IntToChar => "INTTOCHAR",
+                })
+                .to_owned();
+                match name.arity() {
+                    PrimitiveFnArity::Unary => {
+                        if args.len() != 1 {
+                            panic!(
+                                "incorrect argument count for unary primitive function {name:?}"
+                            );
+                        }
+                        for arg in args {
+                            result.append(&mut lower(vec![arg]));
+                        }
+                        result.push(name_string)
+                    }
+                    PrimitiveFnArity::NaryWithDefaultBoolResult(
+                        implementation_arity,
+                        default_result,
+                    ) => {
+                        if args.len() < implementation_arity {
+                            result.append(&mut lower(vec![Expression::Bool(default_result)]));
+                        } else {
+                            for (i, arg) in args.into_iter().enumerate() {
+                                result.append(&mut lower(vec![arg]));
+                                if (i == implementation_arity - 1)
+                                    || (i >= implementation_arity
+                                        && ((i % (implementation_arity - 1)) == 0))
+                                {
+                                    result.push(name_string.clone());
+                                }
+                            }
+                        }
+                    }
+                    PrimitiveFnArity::NaryWithDefaultIntInput(
+                        implementation_arity,
+                        default_input,
+                    ) => {
+                        while args.len() < implementation_arity {
+                            args.insert(0, Expression::Int(default_input));
+                        }
+                        for (i, arg) in args.into_iter().enumerate() {
+                            result.append(&mut lower(vec![arg]));
+                            if (i == implementation_arity - 1)
+                                || (i >= implementation_arity
+                                    && ((i % (implementation_arity - 1)) == 0))
+                            {
+                                result.push(name_string.clone());
+                            }
+                        }
+                    }
                 }
-                result.push(
-                    (match name {
-                        b"add1" => "ADD1",
-                        b"sub1" => "SUB1",
-                        b"+" => "ADD",
-                        b"-" => "SUB",
-                        b"*" => "MUL",
-                        b"<" => "LT",
-                        b"=" => "EQ",
-                        b"zero?" => "ZEROP",
-                        b"integer?" => "INTEGERP",
-                        b"boolean?" => "BOOLEANP",
-                        b"char?" => "CHARP",
-                        b"null?" => "NULLP",
-                        b"not" => "NOT",
-                        b"char->integer" => "CHARTOINT",
-                        b"integer->char" => "INTTOCHAR",
-                        _ => todo!(),
-                    })
-                    .to_owned(),
-                );
             }
             Expression::Null => result.push("LOAD64 NULL".to_owned()),
             Expression::Symbol(_) => todo!(),
@@ -267,9 +340,7 @@ fn main() {
     let mut input = Vec::new();
     let _bytes_read = stdin().read_to_end(&mut input);
     let (ast, rem) = consume_expressions(&input[..]);
-    // for node in &ast {
-    //     println!("{}", node)
-    // }
+    dbg!("{}", &ast);
     if !rem.is_empty() {
         panic!("Leftover data: {:?}", rem);
     }
