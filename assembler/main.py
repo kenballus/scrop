@@ -59,6 +59,9 @@ def main() -> None:
             case ["LOAD64", v]:
                 opcode = 0x10AD000
                 immediate = parse_immediate(v)
+            case ["JUMP", v]:
+                opcode = 0x70ad000
+                immediate = parse_immediate(v)
             case ["ADD1"]:
                 opcode = 0xADD1000
             case ["SUB1"]:

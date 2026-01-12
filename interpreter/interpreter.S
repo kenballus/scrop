@@ -351,6 +351,18 @@ inttocar:
     PUSH(rax)
     ret
 
+.section .text.jump
+.global jump
+jump:
+    pop rax
+    JMP_IF_INT(rax, 1f)
+    ud2
+1:
+    UNTAG_INT(rax)
+    shl rax, 4
+    lea rsp, [rsp + rax]
+    ret
+
 .section .text.done
 .global done
 done:

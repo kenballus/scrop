@@ -87,4 +87,9 @@ SECTIONS {
     .text.inttochar : {
         *(inttochar)
     }
+
+    . = 0x70ad000;
+    .text.jump : {
+        *(jump)
+    }
 }
