@@ -3,23 +3,26 @@
 ## what's where
 
 ### compiler
-A compiler for a subset of Scheme.
-Emits a stack machine assembly language.
+compiler for a subset of scheme.
+emits a stack machine assembly language.
 
-Rust.
+rust.
 
 ### assembler
-An assembler for the stack machine assembly language.
-Emits bytecode.
+assembler for the stack machine assembly language.
+emits bytecode.
 
-Python.
+python.
 
 ### interpreter
-An interpreter for the bytecode. Basically just a ROP executor.
+interpreter for the bytecode.
+basically just a rop executor.
 
-C and x86\_64 asm.
+c and x86\_64 asm.
 
 ## building
+
+(tested only on x86\_64 linux)
 
 ```sh
 cd interpreter \
