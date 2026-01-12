@@ -29,9 +29,11 @@ def parse_immediate(s: str) -> Value:
         return result
 
     if s.startswith(CHAR_PREFIX):
-        s = s[len(CHAR_PREFIX):]
-        if len(s) == 1 and s.isascii():
-            return Char(s)
+        char_data: str = s[len(CHAR_PREFIX):]
+        if len(char_data) == 1 and char_data.isascii():
+            return Char(char_data)
+        elif len(char_data) == 3 and char_data[0] == "x" and char_data.isascii():
+            return Char(chr(int(s[1:], 16)))
         raise ValueError(f"Couldn't parse character constant {s} (not all are supported yet)")
 
     raise ValueError(f"Couldn't parse immediate {s}")
@@ -71,15 +73,15 @@ def main() -> None:
                 opcode = 0x1001000
             case ["EQ"]:
                 opcode = 0xe3e3000
-            case ["ZEROQ"]:
+            case ["ZEROP"]:
                 opcode = 0xEEEE000
-            case ["INTEGERQ"]:
+            case ["INTEGERP"]:
                 opcode = 0x1234000
-            case ["BOOLEANQ"]:
+            case ["BOOLEANP"]:
                 opcode = 0xb001000
-            case ["CHARQ"]:
+            case ["CHARP"]:
                 opcode = 0xcaca000
-            case ["NULLQ"]:
+            case ["NULLP"]:
                 opcode = 0x4321000
             case ["NOT"]:
                 opcode = 0x7777000

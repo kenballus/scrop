@@ -46,6 +46,8 @@ void print_value_and_exit(uint64_t v) {
         puts("#f");
     } else if ((v & CHAR_MASK) == CHAR_SUFFIX) {
         printf("#\\%c\n", (char)(v >> 8));
+    } else if (v == TAGGED_NULL) {
+        puts("'()");
     } else {
         printf("Exit value is malformed: %" PRIu64 "\n", v);
         exit(EXIT_FAILURE);
