@@ -1,5 +1,7 @@
 # scrop
 
+(this works only on x86\_64 linux)
+
 ## what's where
 
 ### compiler
@@ -21,8 +23,6 @@ basically just a rop executor.
 c and x86\_64 asm.
 
 ## building
-
-(tested only on x86\_64 linux)
 
 ```sh
 cd interpreter \
