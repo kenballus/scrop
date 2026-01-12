@@ -4,7 +4,8 @@
 
 // rbx is our sp
 // rsp is our pc
-// rbp will hold our original rsp, so we can do tricks :)
+// rbp holds our original rsp, so we can do tricks :)
+// r12 holds how many stack slots are currently in use.
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
 // Each opcode is simply the address of its implementation.
 // (See the linker script for these addresses)
@@ -14,16 +15,29 @@
 // -  0011111 => bool
 // - 00101111 => '()
 
-
 // Needs to preserve flags
 #define PUSH(X) \
-    lea rbx, [rbx + 8] ; \
-    mov qword ptr [rbx], X
+    xchg rsp, rbp ; \
+    pushf ; \
+    cmp r12, NUM_STACK_SLOTS ; \
+    je stack_overflow ; \
+    add rbx, 8 ; \
+    mov qword ptr [rbx], X ; \
+    inc r12 ; \
+    popf ; \
+    xchg rsp, rbp
 
 // Needs to preserve flags
 #define POP(X) \
+    xchg rsp, rbp ; \
+    pushf ; \
+    cmp r12, 0 ; \
+    je stack_underflow ; \
     mov X, qword ptr [rbx] ; \
-    lea rbx, [rbx - 8]
+    sub rbx, 8 ; \
+    dec r12 ; \
+    popf ; \
+    xchg rsp, rbp
 
 #define JMP_IF_NULL(R64, LABEL) \
     cmp R64, TAGGED_NULL ; \
@@ -76,14 +90,21 @@
 
 .section .text
 
+stack_overflow:
+    ud2
+
+stack_underflow:
+    ud2
+
 zero_location:
     .quad 0
 
 .global interpret
 interpret:
-    mov rbp, rsp
+    mov rbp, rsp // Save the original rsp
     mov rsp, rdi // Load up the interpreter pc
-    mov rbx, rsi // Load up the interpreter sp
+    lea rbx, [rsi - 8] // Load up the interpreter sp
+    xor r12d, r12d // 0 stack slots are in use
     ret
 
 .section .text.add1
@@ -186,7 +207,7 @@ lt:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
     cmp rax, rcx
-    mov eax, 0
+    xor eax, eax
     setl al
     TAG_BOOL(rax)
     PUSH(rax)
@@ -207,7 +228,7 @@ eq:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
     cmp rax, rcx
-    mov eax, 0
+    xor eax, eax
     sete al
     TAG_BOOL(rax)
     PUSH(rax)
@@ -230,7 +251,7 @@ zeroq:
 1: // int
     UNTAG_INT(rax)
     test rax, rax
-    mov eax, 0
+    xor eax, eax
     sete al
     TAG_BOOL(rax)
     PUSH(rax)
