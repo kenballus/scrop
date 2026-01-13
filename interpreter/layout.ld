@@ -3,6 +3,11 @@ SECTIONS {
     .text : {
     }
 
+    . = 0xfa11000;
+    .text.fall : {
+        *(fall)
+    }
+
     . = 0x3e3e000;
     .text.eqp : {
         *(eqp)
@@ -102,4 +107,15 @@ SECTIONS {
     .text.cjump : {
         *(cjump)
     }
+
+    . = 0x9e7000;
+    .text.get : {
+        *(get)
+    }
+
+    . = 0x49e7000;
+    .text.forget : {
+        *(forget)
+    }
+
 }

@@ -14,6 +14,7 @@
 // - 00001111 => char
 // -  0011111 => bool
 // - 00101111 => '()
+// - all 1s   => #<unspecified>
 
 // Needs to preserve flags
 #define PUSH(X) \
@@ -207,7 +208,7 @@ lt:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
     cmp rax, rcx
-    xor eax, eax
+    mov eax, 0 // cannot be xor because of flags
     setl al
     TAG_BOOL(rax)
     PUSH(rax)
@@ -228,7 +229,7 @@ eq:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
     cmp rax, rcx
-    xor eax, eax
+    mov eax, 0 // cannot be xor because of flags
     sete al
     TAG_BOOL(rax)
     PUSH(rax)
@@ -267,7 +268,7 @@ zerop:
 1: // int
     UNTAG_INT(rax)
     test rax, rax
-    xor eax, eax
+    mov eax, 0 // cannot be xor because of flags
     sete al
     TAG_BOOL(rax)
     PUSH(rax)
@@ -352,7 +353,7 @@ chartoint:
 
 .section .text.inttochar
 .global inttochar
-inttocar:
+inttochar:
     add rsp, 8 // Skip immediate
     POP(rax)
     JMP_IF_INT(rax, 1f)
@@ -371,10 +372,6 @@ inttocar:
 .global cjump
 cjump:
     pop rax
-    JMP_IF_INT(rax, 1f)
-    ud2
-1:
-    UNTAG_INT(rax)
     POP(rcx)
     JMP_IF_BOOL(rcx, 1f)
     ud2
@@ -386,15 +383,41 @@ cjump:
 1:
     ret
 
+.section .text.get
+.global get
+get:
+    pop rax // The offset from the stack base to get
+    cmp rax, r12
+    jb 1f
+    ud2 // Stack access out of range
+1:
+    // movq rax, [stack_base + (offset - r12 + 1) * slot_size]
+    sub rax, r12
+    inc rax
+    mov rax, qword ptr [rbx + rax * STACK_SLOT_SIZE]
+    PUSH(rax)
+    ret
+
+.section .text.fall
+.global fall
+fall:
+    add rsp, 8 // Skip immediate
+    POP(rax)
+    POP(rcx)
+    PUSH(rax)
+    ret
+
+.section .text.forget
+.global forget
+forget:
+    add rsp, 8
+    POP(rax)
+    ret
 
 .section .text.jump
 .global jump
 jump:
     pop rax
-    JMP_IF_INT(rax, 1f)
-    ud2
-1:
-    UNTAG_INT(rax)
     shl rax, 4
     lea rsp, [rsp + rax]
     ret
