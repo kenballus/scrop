@@ -16,7 +16,8 @@ bool is_valid_opcode(uint64_t const opcode) {
     static uint64_t const OPCODES[] = {
         0xadd1000, 0x50b1000, 0xd0d0000, 0x10ad000, 0x0add000, 0x050b000,
         0x0a55000, 0x1001000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
-        0xca7000, 0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000, 0x170c000, 0x3e3e000, 0x9e7000, 0x49e7000, 0xfa11000};
+        0xca7000,  0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000,
+        0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc001000};
     for (size_t i = 0; i < _Countof(OPCODES); i++) {
         if (opcode == OPCODES[i]) {
             return true;
@@ -50,11 +51,13 @@ int main(void) {
     uint64_t *bytecode = NULL;
     size_t bytes_read = 0;
     while (true) {
-        bytecode = realloc(bytecode, bytes_read + INSTRUCTIONS_PER_READ * INSTRUCTION_SIZE);
+        bytecode = realloc(bytecode, bytes_read + INSTRUCTIONS_PER_READ *
+                                                      INSTRUCTION_SIZE);
         if (bytecode == NULL) {
             return EXIT_FAILURE;
         }
-        size_t const fread_rc = fread(bytecode, INSTRUCTION_SIZE, INSTRUCTIONS_PER_READ, stdin);
+        size_t const fread_rc =
+            fread(bytecode, INSTRUCTION_SIZE, INSTRUCTIONS_PER_READ, stdin);
         bytes_read += fread_rc * INSTRUCTION_SIZE;
         if (fread_rc != INSTRUCTIONS_PER_READ) {
             break;

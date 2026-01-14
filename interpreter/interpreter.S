@@ -207,7 +207,7 @@ lt:
 1: // int
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
-    cmp rax, rcx
+    cmp rcx, rax
     mov eax, 0 // cannot be xor because of flags
     setl al
     TAG_BOOL(rax)
@@ -420,6 +420,22 @@ jump:
     pop rax
     shl rax, 4
     lea rsp, [rsp + rax]
+    ret
+
+.section .text.and
+.global and
+and:
+    add rsp, 8 // Skip immedate
+    POP(rax)
+    POP(rcx)
+    cmp rax, FALSE
+    je 1f
+    cmp rcx, FALSE
+    je 1f
+    PUSH(TRUE)
+    ret
+1:
+    PUSH(FALSE)
     ret
 
 .section .text.done

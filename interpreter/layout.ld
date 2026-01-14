@@ -3,6 +3,11 @@ SECTIONS {
     .text : {
     }
 
+    . = 0xc001000;
+    .text.and : {
+        *(and)
+    }
+
     . = 0xfa11000;
     .text.fall : {
         *(fall)
