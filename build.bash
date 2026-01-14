@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-pushd ./interpreter
+pushd ./interpreter &>/dev/null
 make
-popd
+popd &>/dev/null
 
-pushd ./compiler
+pushd ./compiler &>/dev/null
 cargo build
-popd
+popd &>/dev/null

@@ -536,13 +536,29 @@ fn lower_expressions<'a>(
     result
 }
 
-fn main() {
-    let mut input_vec = Vec::new();
-    let _bytes_read = stdin().read_to_end(&mut input_vec);
-    let (ast, input_slice) = consume_expressions(consume_whitespace(&input_vec[..]));
-    dbg!(&ast);
+fn compile_all(input_slice: &[u8]) -> Vec<String> {
+    let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
+    // dbg!(&ast);
     if !input_slice.is_empty() {
         panic!("Leftover data: {:?}", input_slice);
     }
-    println!("{}", lower_expressions(ast, HashMap::new(), 0).join("\n"))
+    lower_expressions(ast, HashMap::new(), 0)
+}
+
+#[test]
+#[should_panic]
+fn let_binding_too_many_args() {
+    compile_all(b"(let ((x 1 1)) x)");
+}
+
+#[test]
+#[should_panic]
+fn let_binding_list_not_nested() {
+    compile_all(b"(let (x 1) x)");
+}
+
+fn main() {
+    let mut input_vec = Vec::new();
+    let _bytes_read = stdin().read_to_end(&mut input_vec);
+    println!("{}", compile_all(&input_vec[..]).join("\n"))
 }

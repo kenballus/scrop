@@ -36,59 +36,6 @@ printf '(if (= 10 (+ 1 2 3 4)) (integer->char 97) (integer->char 65))' \
     | uv run assembler/main.py \
     | ./interpreter/interpreter
 ```
-
-### stdout
 ```
 #\a
-```
-
-### stderr
-```
-&ast = [
-    If(
-        [
-            PrimitiveFnCall(
-                Eq,
-                [
-                    Int(
-                        10,
-                    ),
-                    PrimitiveFnCall(
-                        Add,
-                        [
-                            Int(
-                                1,
-                            ),
-                            Int(
-                                2,
-                            ),
-                            Int(
-                                3,
-                            ),
-                            Int(
-                                4,
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-            PrimitiveFnCall(
-                IntToChar,
-                [
-                    Int(
-                        97,
-                    ),
-                ],
-            ),
-            PrimitiveFnCall(
-                IntToChar,
-                [
-                    Int(
-                        65,
-                    ),
-                ],
-            ),
-        ],
-    ),
-]
 ```
