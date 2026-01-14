@@ -476,21 +476,21 @@ fn lower_expression<'a>(
             result.push("EQP".to_owned());
             stack_slots_used -= 1; // eqp
 
-            // cons
-            let mut cons_code = lower_expression(v.remove(0), env.clone(), stack_slots_used);
+            // consequent
+            let mut consequent_code = lower_expression(v.remove(0), env.clone(), stack_slots_used);
 
-            // alt
-            let mut alt_code = if let Some(alt_code) = v.pop() {
-                lower_expression(alt_code, env.clone(), stack_slots_used)
+            // alternative
+            let mut alternative_code = if let Some(alternative_code) = v.pop() {
+                lower_expression(alternative_code, env.clone(), stack_slots_used)
             } else {
                 vec!["LOAD64 UNSPECIFIED".to_owned()]
             };
 
-            cons_code.push("JUMP ".to_owned() + &alt_code.len().to_string());
+            consequent_code.push("JUMP ".to_owned() + &alternative_code.len().to_string());
 
-            result.push("CJUMP ".to_owned() + &cons_code.len().to_string());
-            result.append(&mut cons_code);
-            result.append(&mut alt_code);
+            result.push("CJUMP ".to_owned() + &consequent_code.len().to_string());
+            result.append(&mut consequent_code);
+            result.append(&mut alternative_code);
         }
         Expression::Let(bindings, exps) => {
             let mut new_env = env.clone();
@@ -551,6 +551,12 @@ fn compile_all(input_slice: &[u8]) -> Vec<String> {
 #[should_panic]
 fn let_binding_too_many_args() {
     compile_all(b"(let ((x 1 1)) x)");
+}
+
+#[test]
+#[should_panic]
+fn let_binding_duplicate_key() {
+    compile_all(b"(let ((x 1) (x 1)) x)");
 }
 
 #[test]
