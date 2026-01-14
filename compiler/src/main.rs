@@ -445,14 +445,17 @@ fn lower_expression<'a>(
                     let mut stack_slots_used = stack_slots_used;
                     for (i, arg) in args.into_iter().enumerate() {
                         result.append(&mut lower_expression(arg, env.clone(), stack_slots_used));
-                        stack_slots_used += 1; // expression pushes one result
+                        stack_slots_used += 1; // arg
                         if (i == implementation_arity - 1)
                             || (i >= implementation_arity
                                 && ((i % (implementation_arity - 1)) == 0))
                         {
                             result.push(name_string.clone());
-                            stack_slots_used -= implementation_arity; // implementation pops n
-                            stack_slots_used += 1; // and pushes result
+                            // Note: this cannot be rewritten as
+                            // `stack_slots_used -= 1 - implementation_arity`
+                            // because that will promote 1 to usize, and then underflow.
+                            stack_slots_used -= implementation_arity; // implementation args
+                            stack_slots_used += 1; //                    implementation result
                         }
                     }
                 }
@@ -467,12 +470,11 @@ fn lower_expression<'a>(
                 env.clone(),
                 stack_slots_used,
             ));
-            stack_slots_used += 1; // cond pushes result
+            stack_slots_used += 1; // cond
             result.push("LOAD64 #f".to_owned());
-            stack_slots_used += 1; // pushes #f
+            stack_slots_used += 1; // load
             result.push("EQP".to_owned());
-            stack_slots_used -= 2; // pops #f and cond
-            stack_slots_used += 1; // pushes result
+            stack_slots_used -= 1; // eqp
 
             // cons
             let mut cons_code = lower_expression(v.remove(0), env.clone(), stack_slots_used);

@@ -9,7 +9,7 @@ popd &>/dev/null
 
 
 for t in tests/*; do
-    if diff <(./compiler/target/debug/compiler < "$t/in" 2>/dev/null | uv run ./assembler/main.py | ./interpreter/interpreter) "$t/out"; then
+    if diff <(./run.bash < "$t/in") "$t/out"; then
         echo "$t: pass"
     else
         echo "$t: fail"

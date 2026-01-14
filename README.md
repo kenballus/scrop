@@ -31,10 +31,7 @@ x86\_64 asm and a little bit of c.
 ## example
 
 ```sh
-printf '(if (= 10 (+ 1 2 3 4)) (integer->char 97) (integer->char 65))' \
-    | ./compiler/target/debug/compiler \
-    | uv run assembler/main.py \
-    | ./interpreter/interpreter
+printf '(if (= 10 (+ 1 2 3 4)) (integer->char 97) (integer->char 65))' | ./run.bash
 ```
 ```
 #\a
