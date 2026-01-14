@@ -417,6 +417,9 @@ fn lower_expression<'a>(
                             ));
                             stack_slots_used += 1;
                         }
+                        // From this point forward, stack_slots_used is not updated, even though
+                        // the stack is used. This is because we don't call lower_expression again
+                        // in this match arm, so it would be a dead store.
                         for (i, j) in (0..num_args).zip(1..num_args) {
                             result.append(&mut vec![
                                 "GET ".to_owned() + &i.to_string(),
