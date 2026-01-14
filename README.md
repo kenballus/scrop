@@ -25,12 +25,7 @@ x86\_64 asm and a little bit of c.
 ## building
 
 ```sh
-cd interpreter \
-    && make \
-    && cd .. \
-    && cd compiler \
-    && cargo build \
-    && cd ..
+./build.bash
 ```
 
 ## example
