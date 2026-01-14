@@ -547,26 +547,98 @@ fn compile_all(input_slice: &[u8]) -> Vec<String> {
     lower_expressions(ast, HashMap::new(), 0)
 }
 
+fn main() {
+    let mut input_vec = Vec::new();
+    let _bytes_read = stdin().read_to_end(&mut input_vec);
+    println!("{}", compile_all(&input_vec[..]).join("\n"))
+}
+
 #[test]
-#[should_panic]
+#[should_panic(expected = "Couldn't find closing ')' for let expression")]
+fn let_missing_close_paren() {
+    compile_all(b"(let ((x 1)) x");
+}
+
+#[test]
+#[should_panic(expected = "Couldn't find '(' in binding list!")]
+fn invalid_let_binding_list() {
+    compile_all(b"(let 1 1)");
+}
+
+#[test]
+#[should_panic(expected = "Couldn't find '(' in binding list entry!")]
+fn invalid_let_binding_list_entry() {
+    compile_all(b"(let (1) 1)");
+}
+
+#[test]
+#[should_panic(expected = "Couldn't parse symbol in binding list!")]
+fn invalid_let_binding_symbol() {
+    compile_all(b"(let ((] 1)) 1)");
+}
+
+#[test]
+#[should_panic(expected = "Couldn't parse expression in binding list!")]
+fn invalid_let_binding_expression() {
+    compile_all(b"(let ((x ])) 1)");
+}
+
+#[test]
+#[should_panic(expected = "Unexpected data after expression in binding list!")]
 fn let_binding_too_many_args() {
     compile_all(b"(let ((x 1 1)) x)");
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "Duplicate key in let binding")]
 fn let_binding_duplicate_key() {
     compile_all(b"(let ((x 1) (x 1)) x)");
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "Couldn't find '(' in binding list entry!")]
 fn let_binding_list_not_nested() {
     compile_all(b"(let (x 1) x)");
 }
 
-fn main() {
-    let mut input_vec = Vec::new();
-    let _bytes_read = stdin().read_to_end(&mut input_vec);
-    println!("{}", compile_all(&input_vec[..]).join("\n"))
+#[test]
+#[should_panic(expected = "Invalid argument count to if")]
+fn too_few_if_args() {
+    compile_all(b"(if)");
+}
+
+#[test]
+#[should_panic(expected = "Invalid argument count to if")]
+fn too_many_if_args() {
+    compile_all(b"(if 1 2 3 4)");
+}
+
+#[test]
+#[should_panic(expected = "Leftover data: [93]")]
+fn leftover_data() {
+    compile_all(b"]");
+}
+
+#[test]
+#[should_panic(expected = "incorrect argument count for unary primitive function Not")]
+fn too_few_unary_args() {
+    compile_all(b"(not)");
+}
+
+#[test]
+#[should_panic(expected = "incorrect argument count for unary primitive function Not")]
+fn too_many_unary_args() {
+    compile_all(b"(not 1 2)");
+}
+
+#[test]
+#[should_panic(expected = "Too few arguments provided to Sub")]
+fn too_few_nary_args() {
+    compile_all(b"(-)");
+}
+
+#[test]
+#[should_panic(expected = "Couldn't find environment entry for \"a\"")]
+fn use_undefined_variable() {
+    compile_all(b"a");
 }
