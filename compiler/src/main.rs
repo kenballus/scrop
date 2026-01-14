@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{Read, stdin},
+    str::from_utf8,
 };
 
 #[derive(Debug)]
@@ -37,8 +38,8 @@ enum PrimitiveFnName {
 
 enum PrimitiveFnArity {
     Unary,
-    NaryWithDefaultBoolResult(usize, bool), // implementation_arity, default_result
-    NaryWithDefaultIntInput(usize, usize, u64), // implementation_arity, min_args, default_argument
+    NaryAllPairs(usize),         // implementation_arity
+    NaryFold(usize, usize, u64), // implementation_arity, min_args, default_argument
 }
 
 impl PrimitiveFnName {
@@ -46,12 +47,12 @@ impl PrimitiveFnName {
         match self {
             PrimitiveFnName::Add1 => PrimitiveFnArity::Unary,
             PrimitiveFnName::Sub1 => PrimitiveFnArity::Unary,
-            PrimitiveFnName::Add => PrimitiveFnArity::NaryWithDefaultIntInput(2, 0, 0),
-            PrimitiveFnName::Sub => PrimitiveFnArity::NaryWithDefaultIntInput(2, 1, 0),
-            PrimitiveFnName::Mul => PrimitiveFnArity::NaryWithDefaultIntInput(2, 0, 1),
-            PrimitiveFnName::Lt => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
-            PrimitiveFnName::Eq => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
-            PrimitiveFnName::EqP => PrimitiveFnArity::NaryWithDefaultBoolResult(2, true),
+            PrimitiveFnName::Add => PrimitiveFnArity::NaryFold(2, 0, 0),
+            PrimitiveFnName::Sub => PrimitiveFnArity::NaryFold(2, 1, 0),
+            PrimitiveFnName::Mul => PrimitiveFnArity::NaryFold(2, 0, 1),
+            PrimitiveFnName::Lt => PrimitiveFnArity::NaryAllPairs(2),
+            PrimitiveFnName::Eq => PrimitiveFnArity::NaryAllPairs(2),
+            PrimitiveFnName::EqP => PrimitiveFnArity::NaryAllPairs(2),
             PrimitiveFnName::ZeroP => PrimitiveFnArity::Unary,
             PrimitiveFnName::IntegerP => PrimitiveFnArity::Unary,
             PrimitiveFnName::BooleanP => PrimitiveFnArity::Unary,
@@ -216,9 +217,7 @@ fn consume_bytes<'a>(input: &'a [u8], pattern: &'a [u8]) -> Option<&'a [u8]> {
     }
 }
 
-fn consume_binding_list<'a>(
-    input: &'a [u8],
-) -> (Vec<(&'a [u8], Expression<'a>)>, &'a [u8]) {
+fn consume_binding_list<'a>(input: &'a [u8]) -> (Vec<(&'a [u8], Expression<'a>)>, &'a [u8]) {
     if let Some(mut input) = consume_bytes(input, b"(") {
         let mut bindings = Vec::new();
         loop {
@@ -315,11 +314,7 @@ fn consume_whitespace(input: &[u8]) -> &[u8] {
     if input.is_empty() || !input[0].is_ascii_whitespace() {
         input
     } else {
-        let mut bytes_consumed = 0;
-        while input[bytes_consumed].is_ascii_whitespace() {
-            bytes_consumed += 1;
-        }
-        &input[bytes_consumed..]
+        consume_whitespace(&input[1..])
     }
 }
 
@@ -396,41 +391,48 @@ fn lower_expression<'a>(
                     }
                     result.push(name_string)
                 }
-                PrimitiveFnArity::NaryWithDefaultBoolResult(
-                    implementation_arity,
-                    default_result,
-                ) => {
+                PrimitiveFnArity::NaryAllPairs(implementation_arity) => {
                     let mut stack_slots_used = stack_slots_used;
                     if args.len() < implementation_arity {
-                        result.append(&mut lower_expression(
-                            Expression::Bool(default_result),
-                            env.clone(),
-                            stack_slots_used,
-                        ));
-                    } else {
-                        for (i, arg) in args.into_iter().enumerate() {
+                        for arg in args.into_iter() {
                             result.append(&mut lower_expression(
                                 arg,
                                 env.clone(),
                                 stack_slots_used,
                             ));
-                            stack_slots_used += 1; // expression pushes one result
-                            if (i == implementation_arity - 1)
-                                || (i >= implementation_arity
-                                    && ((i % (implementation_arity - 1)) == 0))
-                            {
-                                result.push(name_string.clone());
-                                stack_slots_used -= implementation_arity; // implementation pops n
-                                stack_slots_used += 1; // and pushes result
+                            result.push("FORGET".to_owned());
+                        }
+                        result.append(&mut lower_expression(
+                            Expression::Bool(true),
+                            env.clone(),
+                            stack_slots_used,
+                        ));
+                    } else {
+                        let num_args: usize = args.len();
+                        for arg in args {
+                            result.append(&mut lower_expression(
+                                arg,
+                                env.clone(),
+                                stack_slots_used,
+                            ));
+                            stack_slots_used += 1;
+                        }
+                        for (i, j) in (0..num_args).zip(1..num_args) {
+                            result.append(&mut vec![
+                                "GET ".to_owned() + &i.to_string(),
+                                "GET ".to_owned() + &j.to_string(),
+                                "LT".to_owned(),
+                            ]);
+                            if i != 0 {
+                                result.push("AND".to_owned());
                             }
+                        }
+                        for _ in 0..num_args {
+                            result.push("FALL".to_owned());
                         }
                     }
                 }
-                PrimitiveFnArity::NaryWithDefaultIntInput(
-                    implementation_arity,
-                    min_args,
-                    default_argument,
-                ) => {
+                PrimitiveFnArity::NaryFold(implementation_arity, min_args, default_argument) => {
                     if args.len() < min_args {
                         panic!("Too few arguments provided to {name:?}");
                     }
@@ -476,7 +478,7 @@ fn lower_expression<'a>(
             let mut alt_code = if let Some(alt_code) = v.pop() {
                 lower_expression(alt_code, env.clone(), stack_slots_used)
             } else {
-                vec!["LOAD64 UNSPECIFIED".to_string()]
+                vec!["LOAD64 UNSPECIFIED".to_owned()]
             };
 
             cons_code.push("JUMP ".to_owned() + &alt_code.len().to_string());
@@ -502,7 +504,14 @@ fn lower_expression<'a>(
             }
         }
         Expression::Symbol(name) => {
-            result.push("GET ".to_owned() + &env[name].to_string());
+            if let Some(env_index) = env.get(name) {
+                result.push("GET ".to_owned() + &env_index.to_string());
+            } else {
+                panic!(
+                    "Couldn't find environment entry for \"{}\"",
+                    from_utf8(name).unwrap()
+                )
+            }
         }
     };
     result
