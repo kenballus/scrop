@@ -111,6 +111,8 @@ def main() -> None:
                 opcode = 0xc701000
             case ["FALL"]:
                 opcode = 0xfa11000
+            case ["AND"]:
+                opcode = 0xc001000
             case _:
                 raise ValueError(f"Couldn't parse line {line}")
         os.write(1, opcode.to_bytes(8, "little") + immediate)
