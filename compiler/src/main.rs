@@ -193,7 +193,7 @@ fn lower_let<'a>(
 ) -> Vec<String> {
     let mut result = Vec::new();
     if let Expression::Form(bindings) = args.remove(0) {
-        let new_env = &mut env.clone();
+        let mut new_bindings = HashMap::new();
         let mut stack_slots_used = stack_slots_used;
         let num_bindings = bindings.len();
 
@@ -204,7 +204,7 @@ fn lower_let<'a>(
                     "let binding has incorrect argument count."
                 );
                 if let (Expression::Symbol(name), exp) = (binding.remove(0), binding.remove(0)) {
-                    let insert_rc = new_env.insert(name, stack_slots_used);
+                    let insert_rc = new_bindings.insert(name, stack_slots_used);
                     assert!(insert_rc.is_none(), "Duplicate key in let binding");
                     result.append(&mut lower_expression(exp, &env.clone(), stack_slots_used));
                     stack_slots_used += 1;
@@ -216,6 +216,8 @@ fn lower_let<'a>(
             }
         }
 
+        let new_env = &mut env.clone();
+        new_env.extend(new_bindings.drain());
         result.append(&mut lower_expressions(args, new_env, stack_slots_used));
         for _ in 0..num_bindings {
             result.push("FALL".to_owned());
