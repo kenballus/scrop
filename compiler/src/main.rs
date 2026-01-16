@@ -199,9 +199,9 @@ fn lower_expression<'a>(
 ) -> Vec<String> {
     let mut result = Vec::new();
     match exp {
-        Expression::Int(x) => result.push("LOAD64 ".to_owned() + &x.to_string()),
-        Expression::Char(x) => result.push("LOAD64 #\\".to_owned() + format!("x{:x}", x).as_str()),
-        Expression::Bool(x) => result.push("LOAD64 ".to_owned() + if x { "#t" } else { "#f" }),
+        Expression::Int(x) => result.push("LOAD ".to_owned() + &x.to_string()),
+        Expression::Char(x) => result.push("LOAD #\\".to_owned() + format!("x{:x}", x).as_str()),
+        Expression::Bool(x) => result.push("LOAD ".to_owned() + if x { "#t" } else { "#f" }),
         Expression::Form(mut args) => {
             if args.is_empty() {
                 panic!("Empty form!");
@@ -262,7 +262,7 @@ fn lower_expression<'a>(
                             stack_slots_used,
                         ));
                         stack_slots_used += 1; // cond
-                        result.push("LOAD64 #f".to_owned());
+                        result.push("LOAD #f".to_owned());
                         stack_slots_used += 1; // load
                         result.push("EQP".to_owned());
                         stack_slots_used -= 1; // eqp
@@ -275,7 +275,7 @@ fn lower_expression<'a>(
                         let mut alternative_code = if let Some(alternative_code) = args.pop() {
                             lower_expression(alternative_code, env.clone(), stack_slots_used)
                         } else {
-                            vec!["LOAD64 UNSPECIFIED".to_owned()]
+                            vec!["LOAD UNSPECIFIED".to_owned()]
                         };
 
                         consequent_code
@@ -404,7 +404,7 @@ fn lower_expression<'a>(
                 panic!("First entry in form is invalid.")
             }
         }
-        Expression::Null => result.push("LOAD64 NULL".to_owned()),
+        Expression::Null => result.push("LOAD NULL".to_owned()),
         Expression::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
                 result.push("GET ".to_owned() + &env_index.to_string());

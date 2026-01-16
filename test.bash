@@ -9,9 +9,11 @@ popd &>/dev/null
 
 
 for t in tests/*; do
+    printf "$t ... "
     if diff <(./run.bash < "$t/in") "$t/out"; then
-        printf "$t: \x1b[32mok\x1b[0m\n"
+        printf '\x1b[32mok'
     else
-        printf "$t: \x1b[31mfail\x1b[0m\n"
+        printf '\x1b[31mfail'
     fi
+    printf '\x1b[0m\n'
 done

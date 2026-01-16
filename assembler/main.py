@@ -63,7 +63,7 @@ def main() -> None:
         opcode: int | None = None
         immediate: bytes = DEFAULT_IMMEDIATE
         match line.split():
-            case ["LOAD64", v]:
+            case ["LOAD", v]:
                 opcode = 0x10AD000
                 immediate = serialize_immediate(parse_immediate(v))
             case ["JUMP", v]:

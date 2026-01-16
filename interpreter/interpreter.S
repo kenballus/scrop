@@ -251,9 +251,9 @@ eqp:
     PUSH(rax)
     ret
 
-.section .text.load64
-.global load64
-load64:
+.section .text.load
+.global load
+load:
     pop rax   // Read immediate into rax
     PUSH(rax) // Push it to interpreter stack
     ret

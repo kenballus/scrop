@@ -34,8 +34,8 @@ SECTIONS {
     }
 
     . = 0x10ad000;
-    .text.load64 : {
-        *(load64)
+    .text.load : {
+        *(load)
     }
 
     . = 0x0add000;
