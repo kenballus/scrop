@@ -14,12 +14,6 @@ enum Expression<'a> {
     Form(Vec<Expression<'a>>),
 }
 
-enum PrimitiveFnArity {
-    Unary,
-    NaryAllPairs(usize),         // implementation_arity
-    NaryFold(usize, usize, u64), // implementation_arity, min_args, default_argument
-}
-
 fn is_delimiter(v: u8) -> bool {
     v.is_ascii_whitespace() || matches!(v, b'(' | b')')
 }
@@ -192,221 +186,232 @@ fn consume_expressions(mut input: &[u8]) -> (Vec<Expression<'_>>, &[u8]) {
     (result, input)
 }
 
+fn lower_let<'a>(
+    mut args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    if let Expression::Form(bindings) = args.remove(0) {
+        let new_env = &mut env.clone();
+        let mut stack_slots_used = stack_slots_used;
+        let num_bindings = bindings.len();
+
+        for binding in bindings {
+            if let Expression::Form(mut binding) = binding {
+                assert!(
+                    binding.len() == 2,
+                    "let binding has incorrect argument count."
+                );
+                if let (Expression::Symbol(name), exp) = (binding.remove(0), binding.remove(0)) {
+                    let insert_rc = new_env.insert(name, stack_slots_used);
+                    assert!(insert_rc.is_none(), "Duplicate key in let binding");
+                    result.append(&mut lower_expression(exp, &env.clone(), stack_slots_used));
+                    stack_slots_used += 1;
+                } else {
+                    panic!("let binding args are not (Symbol, Expr)")
+                }
+            } else {
+                panic!("let binding is not a form")
+            }
+        }
+
+        result.append(&mut lower_expressions(args, new_env, stack_slots_used));
+        for _ in 0..num_bindings {
+            result.push("FALL".to_owned());
+        }
+    } else {
+        panic!("let bindings is not a form")
+    }
+    result
+}
+
+fn lower_if<'a>(
+    mut args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut stack_slots_used = stack_slots_used;
+    assert!(matches!(args.len(), 2 | 3), "Invalid argument count to if");
+    // cond
+    result.append(&mut lower_expression(
+        args.remove(0),
+        &env.clone(),
+        stack_slots_used,
+    ));
+    stack_slots_used += 1; // cond
+    result.push("LOAD #f".to_owned());
+    stack_slots_used += 1; // load
+    result.push("EQP".to_owned());
+    stack_slots_used -= 1; // eqp
+
+    // consequent
+    let mut consequent_code = lower_expression(args.remove(0), &env.clone(), stack_slots_used);
+
+    // alternative
+    let mut alternative_code = if let Some(alternative_code) = args.pop() {
+        lower_expression(alternative_code, &env.clone(), stack_slots_used)
+    } else {
+        vec!["LOAD UNSPECIFIED".to_owned()]
+    };
+
+    consequent_code.push("JUMP ".to_owned() + &alternative_code.len().to_string());
+
+    result.push("CJUMP ".to_owned() + &consequent_code.len().to_string());
+    result.append(&mut consequent_code);
+    result.append(&mut alternative_code);
+    result
+}
+
+fn lower_unary_primitive<'a>(
+    mnemonic: &str,
+    args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    assert!(
+        args.len() == 1,
+        "incorrect argument count for unary primitive function"
+    );
+    for arg in args {
+        result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
+    }
+    result.push(mnemonic.to_owned());
+    result
+}
+
+fn lower_nary_all_pairs_primitive<'a>(
+    implementation_arity: usize,
+    mnemonic: &str,
+    args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut stack_slots_used = stack_slots_used;
+    if args.len() < implementation_arity {
+        for arg in args {
+            result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
+            result.push("FORGET".to_owned());
+        }
+        result.append(&mut lower_expression(
+            Expression::Bool(true),
+            &env.clone(),
+            stack_slots_used,
+        ));
+    } else {
+        let num_args: usize = args.len();
+        for arg in args {
+            result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
+            stack_slots_used += 1;
+        }
+        // From this point forward, stack_slots_used is not updated, even though
+        // the stack is used. This is because we don't call lower_expression again
+        // in this match arm, so it would be a dead store.
+        for (i, j) in (0..num_args).zip(1..num_args) {
+            result.append(&mut vec![
+                "GET ".to_owned() + &i.to_string(),
+                "GET ".to_owned() + &j.to_string(),
+                mnemonic.to_owned(),
+            ]);
+            if i != 0 {
+                result.push("AND".to_owned());
+            }
+        }
+        for _ in 0..num_args {
+            result.push("FALL".to_owned());
+        }
+    }
+    result
+}
+
+fn lower_nary_fold_primitive<'a>(
+    implementation_arity: usize,
+    min_args: usize,
+    default_argument: u64,
+    mnemonic: &str,
+    mut args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    assert!(
+        args.len() >= min_args,
+        "Too few arguments provided to nary fold primitive function."
+    );
+    while args.len() < implementation_arity {
+        args.insert(0, Expression::Int(default_argument));
+    }
+    let mut stack_slots_used = stack_slots_used;
+    for (i, arg) in args.into_iter().enumerate() {
+        result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
+        stack_slots_used += 1; // arg
+        if (i == implementation_arity - 1)
+            || (i >= implementation_arity && ((i % (implementation_arity - 1)) == 0))
+        {
+            result.push(mnemonic.to_owned());
+            // Note: this cannot be rewritten as
+            // `stack_slots_used -= 1 - implementation_arity`
+            // because that will promote 1 to usize, and then underflow.
+            stack_slots_used -= implementation_arity; // implementation args
+            stack_slots_used += 1; //                    implementation result
+        }
+    }
+    result
+}
+
+fn lower_form<'a>(
+    mut args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    assert!(!args.is_empty(), "Empty form!");
+    if let Expression::Symbol(name) = args.remove(0) {
+        if env.contains_key(name) {
+            todo!("Function calls are not yet implemented.")
+        }
+        match name {
+            b"let" => lower_let(args, env, stack_slots_used),
+            b"if" => lower_if(args, env, stack_slots_used),
+            b"add1" => lower_unary_primitive("ADD1", args, env, stack_slots_used),
+            b"sub1" => lower_unary_primitive("SUB1", args, env, stack_slots_used),
+            b"zero?" => lower_unary_primitive("ZEROP", args, env, stack_slots_used),
+            b"integer?" => lower_unary_primitive("INTEGERP", args, env, stack_slots_used),
+            b"boolean?" => lower_unary_primitive("BOOLEANP", args, env, stack_slots_used),
+            b"char?" => lower_unary_primitive("CHARP", args, env, stack_slots_used),
+            b"null?" => lower_unary_primitive("NULLP", args, env, stack_slots_used),
+            b"not" => lower_unary_primitive("NOT", args, env, stack_slots_used),
+            b"char->integer" => lower_unary_primitive("CHARTOINT", args, env, stack_slots_used),
+            b"integer->char" => lower_unary_primitive("INTTOCHAR", args, env, stack_slots_used),
+            b"+" => lower_nary_fold_primitive(2, 0, 0, "ADD", args, env, stack_slots_used),
+            b"-" => lower_nary_fold_primitive(2, 1, 0, "SUB", args, env, stack_slots_used),
+            b"*" => lower_nary_fold_primitive(2, 0, 1, "MUL", args, env, stack_slots_used),
+            b"<" => lower_nary_all_pairs_primitive(2, "LT", args, env, stack_slots_used),
+            b"=" => lower_nary_all_pairs_primitive(2, "EQ", args, env, stack_slots_used),
+            b"eq?" => lower_nary_all_pairs_primitive(2, "EQP", args, env, stack_slots_used),
+            _ => panic!("Cannot resolve symbol '{name:?}'"),
+        }
+    } else {
+        panic!("First entry in form is invalid.")
+    }
+}
+
 fn lower_expression<'a>(
     exp: Expression<'a>,
     env: &HashMap<&'a [u8], usize>,
     stack_slots_used: usize,
 ) -> Vec<String> {
-    let mut result = Vec::new();
     match exp {
-        Expression::Int(x) => result.push("LOAD ".to_owned() + &x.to_string()),
-        Expression::Char(x) => result.push("LOAD #\\".to_owned() + format!("x{x:x}").as_str()),
-        Expression::Bool(x) => result.push("LOAD ".to_owned() + if x { "#t" } else { "#f" }),
-        Expression::Form(mut args) => {
-            assert!(!args.is_empty(), "Empty form!");
-            if let Expression::Symbol(name) = args.remove(0) {
-                if env.contains_key(name) {
-                    todo!("Function calls are not yet implemented.")
-                }
-                match name {
-                    b"let" => {
-                        if let Expression::Form(bindings) = args.remove(0) {
-                            let new_env = &mut env.clone();
-                            let mut stack_slots_used = stack_slots_used;
-                            let num_bindings = bindings.len();
-
-                            for binding in bindings {
-                                if let Expression::Form(mut binding) = binding {
-                                    assert!(
-                                        binding.len() == 2,
-                                        "let binding has incorrect argument count."
-                                    );
-                                    if let (Expression::Symbol(name), exp) =
-                                        (binding.remove(0), binding.remove(0))
-                                    {
-                                        let insert_rc = new_env.insert(name, stack_slots_used);
-                                        assert!(
-                                            insert_rc.is_none(),
-                                            "Duplicate key in let binding"
-                                        );
-                                        result.append(&mut lower_expression(
-                                            exp,
-                                            &env.clone(),
-                                            stack_slots_used,
-                                        ));
-                                        stack_slots_used += 1;
-                                    } else {
-                                        panic!("let binding args are not (Symbol, Expr)")
-                                    }
-                                } else {
-                                    panic!("let binding is not a form")
-                                }
-                            }
-
-                            result.append(&mut lower_expressions(args, new_env, stack_slots_used));
-                            for _ in 0..num_bindings {
-                                result.push("FALL".to_owned());
-                            }
-                        } else {
-                            panic!("let bindings is not a form")
-                        }
-                    }
-                    b"if" => {
-                        let mut stack_slots_used = stack_slots_used;
-                        assert!(matches!(args.len(), 2 | 3), "Invalid argument count to if");
-                        // cond
-                        result.append(&mut lower_expression(
-                            args.remove(0),
-                            &env.clone(),
-                            stack_slots_used,
-                        ));
-                        stack_slots_used += 1; // cond
-                        result.push("LOAD #f".to_owned());
-                        stack_slots_used += 1; // load
-                        result.push("EQP".to_owned());
-                        stack_slots_used -= 1; // eqp
-
-                        // consequent
-                        let mut consequent_code =
-                            lower_expression(args.remove(0), &env.clone(), stack_slots_used);
-
-                        // alternative
-                        let mut alternative_code = if let Some(alternative_code) = args.pop() {
-                            lower_expression(alternative_code, &env.clone(), stack_slots_used)
-                        } else {
-                            vec!["LOAD UNSPECIFIED".to_owned()]
-                        };
-
-                        consequent_code
-                            .push("JUMP ".to_owned() + &alternative_code.len().to_string());
-
-                        result.push("CJUMP ".to_owned() + &consequent_code.len().to_string());
-                        result.append(&mut consequent_code);
-                        result.append(&mut alternative_code);
-                    }
-                    _ => {
-                        let (arity, mnemonic) = match name {
-                            b"add1" => (PrimitiveFnArity::Unary, "ADD1"),
-                            b"sub1" => (PrimitiveFnArity::Unary, "SUB1"),
-                            b"+" => (PrimitiveFnArity::NaryFold(2, 0, 0), "ADD"),
-                            b"-" => (PrimitiveFnArity::NaryFold(2, 1, 0), "SUB"),
-                            b"*" => (PrimitiveFnArity::NaryFold(2, 0, 1), "MUL"),
-                            b"<" => (PrimitiveFnArity::NaryAllPairs(2), "LT"),
-                            b"=" => (PrimitiveFnArity::NaryAllPairs(2), "EQ"),
-                            b"eq?" => (PrimitiveFnArity::NaryAllPairs(2), "EQP"),
-                            b"zero?" => (PrimitiveFnArity::Unary, "ZEROP"),
-                            b"integer?" => (PrimitiveFnArity::Unary, "INTEGERP"),
-                            b"boolean?" => (PrimitiveFnArity::Unary, "BOOLEANP"),
-                            b"char?" => (PrimitiveFnArity::Unary, "CHARP"),
-                            b"null?" => (PrimitiveFnArity::Unary, "NULLP"),
-                            b"not" => (PrimitiveFnArity::Unary, "NOT"),
-                            b"char->integer" => (PrimitiveFnArity::Unary, "CHARTOINT"),
-                            b"integer->char" => (PrimitiveFnArity::Unary, "INTTOCHAR"),
-                            _ => panic!("Cannot resolve symbol '{name:?}'"),
-                        };
-                        match arity {
-                            PrimitiveFnArity::Unary => {
-                                assert!(
-                                    args.len() == 1,
-                                    "incorrect argument count for unary primitive function"
-                                );
-                                for arg in args {
-                                    result.append(&mut lower_expression(
-                                        arg,
-                                        &env.clone(),
-                                        stack_slots_used,
-                                    ));
-                                }
-                                result.push(mnemonic.to_owned());
-                            }
-                            PrimitiveFnArity::NaryAllPairs(implementation_arity) => {
-                                let mut stack_slots_used = stack_slots_used;
-                                if args.len() < implementation_arity {
-                                    for arg in args {
-                                        result.append(&mut lower_expression(
-                                            arg,
-                                            &env.clone(),
-                                            stack_slots_used,
-                                        ));
-                                        result.push("FORGET".to_owned());
-                                    }
-                                    result.append(&mut lower_expression(
-                                        Expression::Bool(true),
-                                        &env.clone(),
-                                        stack_slots_used,
-                                    ));
-                                } else {
-                                    let num_args: usize = args.len();
-                                    for arg in args {
-                                        result.append(&mut lower_expression(
-                                            arg,
-                                            &env.clone(),
-                                            stack_slots_used,
-                                        ));
-                                        stack_slots_used += 1;
-                                    }
-                                    // From this point forward, stack_slots_used is not updated, even though
-                                    // the stack is used. This is because we don't call lower_expression again
-                                    // in this match arm, so it would be a dead store.
-                                    for (i, j) in (0..num_args).zip(1..num_args) {
-                                        result.append(&mut vec![
-                                            "GET ".to_owned() + &i.to_string(),
-                                            "GET ".to_owned() + &j.to_string(),
-                                            "LT".to_owned(),
-                                        ]);
-                                        if i != 0 {
-                                            result.push("AND".to_owned());
-                                        }
-                                    }
-                                    for _ in 0..num_args {
-                                        result.push("FALL".to_owned());
-                                    }
-                                }
-                            }
-                            PrimitiveFnArity::NaryFold(
-                                implementation_arity,
-                                min_args,
-                                default_argument,
-                            ) => {
-                                assert!(
-                                    args.len() >= min_args,
-                                    "Too few arguments provided to NaryFold primitive function."
-                                );
-                                while args.len() < implementation_arity {
-                                    args.insert(0, Expression::Int(default_argument));
-                                }
-                                let mut stack_slots_used = stack_slots_used;
-                                for (i, arg) in args.into_iter().enumerate() {
-                                    result.append(&mut lower_expression(
-                                        arg,
-                                        &env.clone(),
-                                        stack_slots_used,
-                                    ));
-                                    stack_slots_used += 1; // arg
-                                    if (i == implementation_arity - 1)
-                                        || (i >= implementation_arity
-                                            && ((i % (implementation_arity - 1)) == 0))
-                                    {
-                                        result.push(mnemonic.to_owned());
-                                        // Note: this cannot be rewritten as
-                                        // `stack_slots_used -= 1 - implementation_arity`
-                                        // because that will promote 1 to usize, and then underflow.
-                                        stack_slots_used -= implementation_arity; // implementation args
-                                        stack_slots_used += 1; //                    implementation result
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                panic!("First entry in form is invalid.")
-            }
-        }
-        Expression::Null => result.push("LOAD NULL".to_owned()),
+        Expression::Int(x) => vec!["LOAD ".to_owned() + &x.to_string()],
+        Expression::Char(x) => vec!["LOAD #\\".to_owned() + format!("x{x:x}").as_str()],
+        Expression::Bool(x) => vec!["LOAD ".to_owned() + if x { "#t" } else { "#f" }],
+        Expression::Form(args) => lower_form(args, env, stack_slots_used),
+        Expression::Null => vec!["LOAD NULL".to_owned()],
         Expression::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
-                result.push("GET ".to_owned() + &env_index.to_string());
+                vec!["GET ".to_owned() + &env_index.to_string()]
             } else {
                 panic!(
                     "Couldn't find environment entry for \"{}\"",
@@ -415,7 +420,6 @@ fn lower_expression<'a>(
             }
         }
     }
-    result
 }
 
 fn lower_expressions<'a>(
@@ -508,7 +512,7 @@ fn too_many_unary_args() {
 }
 
 #[test]
-#[should_panic(expected = "Too few arguments provided to NaryFold primitive function")]
+#[should_panic(expected = "Too few arguments provided to nary fold primitive function")]
 fn too_few_nary_args() {
     compile_all(b"(-)");
 }
