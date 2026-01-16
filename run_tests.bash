@@ -10,8 +10,8 @@ popd &>/dev/null
 
 for t in tests/*; do
     if diff <(./run.bash < "$t/in") "$t/out"; then
-        echo "$t: pass"
+        printf "$t: \x1b[32mok\x1b[0m\n"
     else
-        echo "$t: fail"
+        printf "$t: \x1b[31mfail\x1b[0m\n"
     fi
 done

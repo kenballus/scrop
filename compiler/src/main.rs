@@ -10,59 +10,14 @@ enum Expression<'a> {
     Bool(bool),
     Char(u8),
     Symbol(&'a [u8]),
-    PrimitiveFnCall(PrimitiveFnName, Vec<Expression<'a>>),
     Null,
-    If(Vec<Expression<'a>>),
-    Let(Vec<(&'a [u8], Expression<'a>)>, Vec<Expression<'a>>),
-}
-
-#[derive(Debug)]
-enum PrimitiveFnName {
-    Add1,
-    Sub1,
-    Add,
-    Sub,
-    Mul,
-    Lt,
-    Eq,
-    EqP,
-    ZeroP,
-    IntegerP,
-    BooleanP,
-    CharP,
-    NullP,
-    Not,
-    CharToInt,
-    IntToChar,
+    Form(Vec<Expression<'a>>),
 }
 
 enum PrimitiveFnArity {
     Unary,
     NaryAllPairs(usize),         // implementation_arity
     NaryFold(usize, usize, u64), // implementation_arity, min_args, default_argument
-}
-
-impl PrimitiveFnName {
-    fn arity(&self) -> PrimitiveFnArity {
-        match self {
-            PrimitiveFnName::Add1 => PrimitiveFnArity::Unary,
-            PrimitiveFnName::Sub1 => PrimitiveFnArity::Unary,
-            PrimitiveFnName::Add => PrimitiveFnArity::NaryFold(2, 0, 0),
-            PrimitiveFnName::Sub => PrimitiveFnArity::NaryFold(2, 1, 0),
-            PrimitiveFnName::Mul => PrimitiveFnArity::NaryFold(2, 0, 1),
-            PrimitiveFnName::Lt => PrimitiveFnArity::NaryAllPairs(2),
-            PrimitiveFnName::Eq => PrimitiveFnArity::NaryAllPairs(2),
-            PrimitiveFnName::EqP => PrimitiveFnArity::NaryAllPairs(2),
-            PrimitiveFnName::ZeroP => PrimitiveFnArity::Unary,
-            PrimitiveFnName::IntegerP => PrimitiveFnArity::Unary,
-            PrimitiveFnName::BooleanP => PrimitiveFnArity::Unary,
-            PrimitiveFnName::CharP => PrimitiveFnArity::Unary,
-            PrimitiveFnName::NullP => PrimitiveFnArity::Unary,
-            PrimitiveFnName::Not => PrimitiveFnArity::Unary,
-            PrimitiveFnName::CharToInt => PrimitiveFnArity::Unary,
-            PrimitiveFnName::IntToChar => PrimitiveFnArity::Unary,
-        }
-    }
 }
 
 fn is_delimiter(v: u8) -> bool {
@@ -143,64 +98,11 @@ fn consume_null(input: &[u8]) -> Option<&[u8]> {
     }
 }
 
-fn parse_primitive_fn_name(input: &[u8]) -> Option<PrimitiveFnName> {
-    match input {
-        b"add1" => Some(PrimitiveFnName::Add1),
-        b"sub1" => Some(PrimitiveFnName::Sub1),
-        b"+" => Some(PrimitiveFnName::Add),
-        b"-" => Some(PrimitiveFnName::Sub),
-        b"*" => Some(PrimitiveFnName::Mul),
-        b"<" => Some(PrimitiveFnName::Lt),
-        b"=" => Some(PrimitiveFnName::Eq),
-        b"zero?" => Some(PrimitiveFnName::ZeroP),
-        b"integer?" => Some(PrimitiveFnName::IntegerP),
-        b"boolean?" => Some(PrimitiveFnName::BooleanP),
-        b"char?" => Some(PrimitiveFnName::CharP),
-        b"null?" => Some(PrimitiveFnName::NullP),
-        b"not" => Some(PrimitiveFnName::Not),
-        b"char->integer" => Some(PrimitiveFnName::CharToInt),
-        b"integer->char" => Some(PrimitiveFnName::IntToChar),
-        b"eq?" => Some(PrimitiveFnName::EqP),
-        _ => None,
-    }
-}
-
-fn consume_primitive_fn_call<'a>(
-    input: &'a [u8],
-) -> Option<(PrimitiveFnName, Vec<Expression<'a>>, &'a [u8])> {
+fn consume_form<'a>(input: &'a [u8]) -> Option<(Vec<Expression<'a>>, &'a [u8])> {
     if let Some(input) = consume_bytes(input, b"(") {
-        if let Some((sym, input)) = consume_symbol(input) {
-            let (args, input) = consume_expressions(consume_whitespace(input));
-            if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
-                if let Some(name) = parse_primitive_fn_name(sym) {
-                    Some((name, args, input))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-fn consume_if<'a>(input: &'a [u8]) -> Option<(Vec<Expression<'a>>, &'a [u8])> {
-    if let Some(input) = consume_bytes(input, b"(") {
-        if let Some(input) = consume_bytes(consume_whitespace(input), b"if") {
-            let (args, input) = consume_expressions(consume_whitespace(input));
-            if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
-                if matches!(args.len(), 2 | 3) {
-                    Some((args, input))
-                } else {
-                    panic!("Invalid argument count to if")
-                }
-            } else {
-                None
-            }
+        let (args, input) = consume_expressions(consume_whitespace(input));
+        if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
+            Some((args, input))
         } else {
             None
         }
@@ -212,63 +114,6 @@ fn consume_if<'a>(input: &'a [u8]) -> Option<(Vec<Expression<'a>>, &'a [u8])> {
 fn consume_bytes<'a>(input: &'a [u8], pattern: &'a [u8]) -> Option<&'a [u8]> {
     if input.starts_with(pattern) {
         Some(&input[pattern.len()..])
-    } else {
-        None
-    }
-}
-
-fn consume_binding_list<'a>(input: &'a [u8]) -> (Vec<(&'a [u8], Expression<'a>)>, &'a [u8]) {
-    if let Some(mut input) = consume_bytes(input, b"(") {
-        let mut bindings = Vec::new();
-        loop {
-            if let Some(new_input) = consume_bytes(consume_whitespace(input), b"(") {
-                if let Some((symbol, new_input)) = consume_symbol(consume_whitespace(new_input)) {
-                    if let Some((exp, new_input)) =
-                        consume_expression(consume_whitespace(new_input))
-                    {
-                        if let Some(new_input) = consume_bytes(consume_whitespace(new_input), b")")
-                        {
-                            input = new_input;
-                            bindings.push((symbol, exp));
-                        } else {
-                            panic!("Unexpected data after expression in binding list!")
-                        }
-                    } else {
-                        panic!("Couldn't parse expression in binding list!")
-                    }
-                } else {
-                    panic!("Couldn't parse symbol in binding list!")
-                }
-            } else if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
-                return (bindings, input);
-            } else {
-                panic!("Couldn't find '(' in binding list entry!")
-            }
-        }
-    } else {
-        panic!("Couldn't find '(' in binding list!")
-    }
-}
-
-fn consume_let<'a>(
-    input: &'a [u8],
-) -> Option<(
-    Vec<(&'a [u8], Expression<'a>)>,
-    Vec<Expression<'a>>,
-    &'a [u8],
-)> {
-    if let Some(input) = consume_bytes(input, b"(") {
-        if let Some(input) = consume_bytes(consume_whitespace(input), b"let") {
-            let (bindings, input) = consume_binding_list(consume_whitespace(input));
-            let (exps, input) = consume_expressions(consume_whitespace(input));
-            if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
-                Some((bindings, exps, input))
-            } else {
-                panic!("Couldn't find closing ')' for let expression")
-            }
-        } else {
-            None
-        }
     } else {
         None
     }
@@ -323,18 +168,14 @@ fn consume_expression<'a>(input: &'a [u8]) -> Option<(Expression<'a>, &'a [u8])>
         Some((Expression::Int(v), input))
     } else if let Some((v, input)) = consume_bool(input) {
         Some((Expression::Bool(v), input))
-    } else if let Some((v, input)) = consume_if(input) {
-        Some((Expression::If(v), input))
-    } else if let Some((name, args, input)) = consume_primitive_fn_call(input) {
-        Some((Expression::PrimitiveFnCall(name, args), input))
     } else if let Some((v, input)) = consume_character(input) {
         Some((Expression::Char(v), input))
     } else if let Some(input) = consume_null(input) {
         Some((Expression::Null, input))
     } else if let Some((sym, input)) = consume_symbol(input) {
         Some((Expression::Symbol(sym), input))
-    } else if let Some((bindings, exps, input)) = consume_let(input) {
-        Some((Expression::Let(bindings, exps), input))
+    } else if let Some((args, input)) = consume_form(input) {
+        Some((Expression::Form(args), input))
     } else {
         None
     }
@@ -361,153 +202,209 @@ fn lower_expression<'a>(
         Expression::Int(x) => result.push("LOAD64 ".to_owned() + &x.to_string()),
         Expression::Char(x) => result.push("LOAD64 #\\".to_owned() + format!("x{:x}", x).as_str()),
         Expression::Bool(x) => result.push("LOAD64 ".to_owned() + if x { "#t" } else { "#f" }),
-        Expression::PrimitiveFnCall(name, mut args) => {
-            let name_string = (match name {
-                PrimitiveFnName::Add1 => "ADD1",
-                PrimitiveFnName::Sub1 => "SUB1",
-                PrimitiveFnName::Add => "ADD",
-                PrimitiveFnName::Sub => "SUB",
-                PrimitiveFnName::Mul => "MUL",
-                PrimitiveFnName::Lt => "LT",
-                PrimitiveFnName::Eq => "EQ",
-                PrimitiveFnName::EqP => "EQP",
-                PrimitiveFnName::ZeroP => "ZEROP",
-                PrimitiveFnName::IntegerP => "INTEGERP",
-                PrimitiveFnName::BooleanP => "BOOLEANP",
-                PrimitiveFnName::CharP => "CHARP",
-                PrimitiveFnName::NullP => "NULLP",
-                PrimitiveFnName::Not => "NOT",
-                PrimitiveFnName::CharToInt => "CHARTOINT",
-                PrimitiveFnName::IntToChar => "INTTOCHAR",
-            })
-            .to_owned();
-            match name.arity() {
-                PrimitiveFnArity::Unary => {
-                    if args.len() != 1 {
-                        panic!("incorrect argument count for unary primitive function {name:?}");
-                    }
-                    for arg in args {
-                        result.append(&mut lower_expression(arg, env.clone(), stack_slots_used));
-                    }
-                    result.push(name_string)
+        Expression::Form(mut args) => {
+            if args.is_empty() {
+                panic!("Empty form!");
+            }
+            if let Expression::Symbol(name) = args.remove(0) {
+                if env.contains_key(name) {
+                    todo!("Function calls are not yet implemented.")
                 }
-                PrimitiveFnArity::NaryAllPairs(implementation_arity) => {
-                    let mut stack_slots_used = stack_slots_used;
-                    if args.len() < implementation_arity {
-                        for arg in args.into_iter() {
-                            result.append(&mut lower_expression(
-                                arg,
-                                env.clone(),
-                                stack_slots_used,
-                            ));
-                            result.push("FORGET".to_owned());
+                match name {
+                    b"let" => {
+                        if let Expression::Form(bindings) = args.remove(0) {
+                            let mut new_env = env.clone();
+                            let mut stack_slots_used = stack_slots_used;
+                            let num_bindings = bindings.len();
+
+                            for binding in bindings {
+                                if let Expression::Form(mut binding) = binding {
+                                    if binding.len() != 2 {
+                                        panic!("let binding has incorrect argument count.")
+                                    }
+                                    if let (Expression::Symbol(name), exp) =
+                                        (binding.remove(0), binding.remove(0))
+                                    {
+                                        if new_env.insert(name, stack_slots_used).is_some() {
+                                            panic!("Duplicate key in let binding");
+                                        }
+                                        result.append(&mut lower_expression(
+                                            exp,
+                                            env.clone(),
+                                            stack_slots_used,
+                                        ));
+                                        stack_slots_used += 1;
+                                    } else {
+                                        panic!("let binding args are not (Symbol, Expr)")
+                                    }
+                                } else {
+                                    panic!("let binding is not a form")
+                                }
+                            }
+
+                            result.append(&mut lower_expressions(args, new_env, stack_slots_used));
+                            for _ in 0..num_bindings {
+                                result.push("FALL".to_owned());
+                            }
+                        } else {
+                            panic!("let bindings is not a form")
                         }
+                    }
+                    b"if" => {
+                        let mut stack_slots_used = stack_slots_used;
+                        if !matches!(args.len(), 2 | 3) {
+                            panic!("Invalid argument count to if")
+                        }
+                        // cond
                         result.append(&mut lower_expression(
-                            Expression::Bool(true),
+                            args.remove(0),
                             env.clone(),
                             stack_slots_used,
                         ));
-                    } else {
-                        let num_args: usize = args.len();
-                        for arg in args {
-                            result.append(&mut lower_expression(
-                                arg,
-                                env.clone(),
-                                stack_slots_used,
-                            ));
-                            stack_slots_used += 1;
-                        }
-                        // From this point forward, stack_slots_used is not updated, even though
-                        // the stack is used. This is because we don't call lower_expression again
-                        // in this match arm, so it would be a dead store.
-                        for (i, j) in (0..num_args).zip(1..num_args) {
-                            result.append(&mut vec![
-                                "GET ".to_owned() + &i.to_string(),
-                                "GET ".to_owned() + &j.to_string(),
-                                "LT".to_owned(),
-                            ]);
-                            if i != 0 {
-                                result.push("AND".to_owned());
+                        stack_slots_used += 1; // cond
+                        result.push("LOAD64 #f".to_owned());
+                        stack_slots_used += 1; // load
+                        result.push("EQP".to_owned());
+                        stack_slots_used -= 1; // eqp
+
+                        // consequent
+                        let mut consequent_code =
+                            lower_expression(args.remove(0), env.clone(), stack_slots_used);
+
+                        // alternative
+                        let mut alternative_code = if let Some(alternative_code) = args.pop() {
+                            lower_expression(alternative_code, env.clone(), stack_slots_used)
+                        } else {
+                            vec!["LOAD64 UNSPECIFIED".to_owned()]
+                        };
+
+                        consequent_code
+                            .push("JUMP ".to_owned() + &alternative_code.len().to_string());
+
+                        result.push("CJUMP ".to_owned() + &consequent_code.len().to_string());
+                        result.append(&mut consequent_code);
+                        result.append(&mut alternative_code);
+                    }
+                    _ => {
+                        let (arity, mnemonic) = match name {
+                            b"add1" => (PrimitiveFnArity::Unary, "ADD1"),
+                            b"sub1" => (PrimitiveFnArity::Unary, "SUB1"),
+                            b"+" => (PrimitiveFnArity::NaryFold(2, 0, 0), "ADD"),
+                            b"-" => (PrimitiveFnArity::NaryFold(2, 1, 0), "SUB"),
+                            b"*" => (PrimitiveFnArity::NaryFold(2, 0, 1), "MUL"),
+                            b"<" => (PrimitiveFnArity::NaryAllPairs(2), "LT"),
+                            b"=" => (PrimitiveFnArity::NaryAllPairs(2), "EQ"),
+                            b"eq?" => (PrimitiveFnArity::NaryAllPairs(2), "EQP"),
+                            b"zero?" => (PrimitiveFnArity::Unary, "ZEROP"),
+                            b"integer?" => (PrimitiveFnArity::Unary, "INTEGERP"),
+                            b"boolean?" => (PrimitiveFnArity::Unary, "BOOLEANP"),
+                            b"char?" => (PrimitiveFnArity::Unary, "CHARP"),
+                            b"null?" => (PrimitiveFnArity::Unary, "NULLP"),
+                            b"not" => (PrimitiveFnArity::Unary, "NOT"),
+                            b"char->integer" => (PrimitiveFnArity::Unary, "CHARTOINT"),
+                            b"integer->char" => (PrimitiveFnArity::Unary, "INTTOCHAR"),
+                            _ => panic!("Cannot resolve symbol '{name:?}'"),
+                        };
+                        match arity {
+                            PrimitiveFnArity::Unary => {
+                                if args.len() != 1 {
+                                    panic!("incorrect argument count for unary primitive function");
+                                }
+                                for arg in args {
+                                    result.append(&mut lower_expression(
+                                        arg,
+                                        env.clone(),
+                                        stack_slots_used,
+                                    ));
+                                }
+                                result.push(mnemonic.to_owned())
+                            }
+                            PrimitiveFnArity::NaryAllPairs(implementation_arity) => {
+                                let mut stack_slots_used = stack_slots_used;
+                                if args.len() < implementation_arity {
+                                    for arg in args.into_iter() {
+                                        result.append(&mut lower_expression(
+                                            arg,
+                                            env.clone(),
+                                            stack_slots_used,
+                                        ));
+                                        result.push("FORGET".to_owned());
+                                    }
+                                    result.append(&mut lower_expression(
+                                        Expression::Bool(true),
+                                        env.clone(),
+                                        stack_slots_used,
+                                    ));
+                                } else {
+                                    let num_args: usize = args.len();
+                                    for arg in args {
+                                        result.append(&mut lower_expression(
+                                            arg,
+                                            env.clone(),
+                                            stack_slots_used,
+                                        ));
+                                        stack_slots_used += 1;
+                                    }
+                                    // From this point forward, stack_slots_used is not updated, even though
+                                    // the stack is used. This is because we don't call lower_expression again
+                                    // in this match arm, so it would be a dead store.
+                                    for (i, j) in (0..num_args).zip(1..num_args) {
+                                        result.append(&mut vec![
+                                            "GET ".to_owned() + &i.to_string(),
+                                            "GET ".to_owned() + &j.to_string(),
+                                            "LT".to_owned(),
+                                        ]);
+                                        if i != 0 {
+                                            result.push("AND".to_owned());
+                                        }
+                                    }
+                                    for _ in 0..num_args {
+                                        result.push("FALL".to_owned());
+                                    }
+                                }
+                            }
+                            PrimitiveFnArity::NaryFold(
+                                implementation_arity,
+                                min_args,
+                                default_argument,
+                            ) => {
+                                if args.len() < min_args {
+                                    panic!(
+                                        "Too few arguments provided to NaryFold primitive function."
+                                    );
+                                }
+                                while args.len() < implementation_arity {
+                                    args.insert(0, Expression::Int(default_argument));
+                                }
+                                let mut stack_slots_used = stack_slots_used;
+                                for (i, arg) in args.into_iter().enumerate() {
+                                    result.append(&mut lower_expression(
+                                        arg,
+                                        env.clone(),
+                                        stack_slots_used,
+                                    ));
+                                    stack_slots_used += 1; // arg
+                                    if (i == implementation_arity - 1)
+                                        || (i >= implementation_arity
+                                            && ((i % (implementation_arity - 1)) == 0))
+                                    {
+                                        result.push(mnemonic.to_owned());
+                                        // Note: this cannot be rewritten as
+                                        // `stack_slots_used -= 1 - implementation_arity`
+                                        // because that will promote 1 to usize, and then underflow.
+                                        stack_slots_used -= implementation_arity; // implementation args
+                                        stack_slots_used += 1; //                    implementation result
+                                    }
+                                }
                             }
                         }
-                        for _ in 0..num_args {
-                            result.push("FALL".to_owned());
-                        }
                     }
                 }
-                PrimitiveFnArity::NaryFold(implementation_arity, min_args, default_argument) => {
-                    if args.len() < min_args {
-                        panic!("Too few arguments provided to {name:?}");
-                    }
-                    while args.len() < implementation_arity {
-                        args.insert(0, Expression::Int(default_argument));
-                    }
-                    let mut stack_slots_used = stack_slots_used;
-                    for (i, arg) in args.into_iter().enumerate() {
-                        result.append(&mut lower_expression(arg, env.clone(), stack_slots_used));
-                        stack_slots_used += 1; // arg
-                        if (i == implementation_arity - 1)
-                            || (i >= implementation_arity
-                                && ((i % (implementation_arity - 1)) == 0))
-                        {
-                            result.push(name_string.clone());
-                            // Note: this cannot be rewritten as
-                            // `stack_slots_used -= 1 - implementation_arity`
-                            // because that will promote 1 to usize, and then underflow.
-                            stack_slots_used -= implementation_arity; // implementation args
-                            stack_slots_used += 1; //                    implementation result
-                        }
-                    }
-                }
+            } else {
+                panic!("First entry in form is invalid.")
             }
         }
         Expression::Null => result.push("LOAD64 NULL".to_owned()),
-        Expression::If(mut v) => {
-            let mut stack_slots_used = stack_slots_used;
-            // cond
-            result.append(&mut lower_expression(
-                v.remove(0),
-                env.clone(),
-                stack_slots_used,
-            ));
-            stack_slots_used += 1; // cond
-            result.push("LOAD64 #f".to_owned());
-            stack_slots_used += 1; // load
-            result.push("EQP".to_owned());
-            stack_slots_used -= 1; // eqp
-
-            // consequent
-            let mut consequent_code = lower_expression(v.remove(0), env.clone(), stack_slots_used);
-
-            // alternative
-            let mut alternative_code = if let Some(alternative_code) = v.pop() {
-                lower_expression(alternative_code, env.clone(), stack_slots_used)
-            } else {
-                vec!["LOAD64 UNSPECIFIED".to_owned()]
-            };
-
-            consequent_code.push("JUMP ".to_owned() + &alternative_code.len().to_string());
-
-            result.push("CJUMP ".to_owned() + &consequent_code.len().to_string());
-            result.append(&mut consequent_code);
-            result.append(&mut alternative_code);
-        }
-        Expression::Let(bindings, exps) => {
-            let mut new_env = env.clone();
-            let mut stack_slots_used = stack_slots_used;
-            let num_bindings = bindings.len();
-            for (name, exp) in bindings.into_iter() {
-                if new_env.insert(name, stack_slots_used).is_some() {
-                    panic!("Duplicate key in let binding");
-                }
-                result.append(&mut lower_expression(exp, env.clone(), stack_slots_used));
-                stack_slots_used += 1;
-            }
-            result.append(&mut lower_expressions(exps, new_env, stack_slots_used));
-            for _ in 0..num_bindings {
-                result.push("FALL".to_owned());
-            }
-        }
         Expression::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
                 result.push("GET ".to_owned() + &env_index.to_string());
@@ -554,37 +451,19 @@ fn main() {
 }
 
 #[test]
-#[should_panic(expected = "Couldn't find closing ')' for let expression")]
-fn let_missing_close_paren() {
-    compile_all(b"(let ((x 1)) x");
-}
-
-#[test]
-#[should_panic(expected = "Couldn't find '(' in binding list!")]
+#[should_panic(expected = "let bindings is not a form")]
 fn invalid_let_binding_list() {
     compile_all(b"(let 1 1)");
 }
 
 #[test]
-#[should_panic(expected = "Couldn't find '(' in binding list entry!")]
+#[should_panic(expected = "let binding is not a form")]
 fn invalid_let_binding_list_entry() {
     compile_all(b"(let (1) 1)");
 }
 
 #[test]
-#[should_panic(expected = "Couldn't parse symbol in binding list!")]
-fn invalid_let_binding_symbol() {
-    compile_all(b"(let ((] 1)) 1)");
-}
-
-#[test]
-#[should_panic(expected = "Couldn't parse expression in binding list!")]
-fn invalid_let_binding_expression() {
-    compile_all(b"(let ((x ])) 1)");
-}
-
-#[test]
-#[should_panic(expected = "Unexpected data after expression in binding list!")]
+#[should_panic(expected = "let binding has incorrect argument count.")]
 fn let_binding_too_many_args() {
     compile_all(b"(let ((x 1 1)) x)");
 }
@@ -596,7 +475,7 @@ fn let_binding_duplicate_key() {
 }
 
 #[test]
-#[should_panic(expected = "Couldn't find '(' in binding list entry!")]
+#[should_panic(expected = "let binding is not a form")]
 fn let_binding_list_not_nested() {
     compile_all(b"(let (x 1) x)");
 }
@@ -620,19 +499,19 @@ fn leftover_data() {
 }
 
 #[test]
-#[should_panic(expected = "incorrect argument count for unary primitive function Not")]
+#[should_panic(expected = "incorrect argument count for unary primitive function")]
 fn too_few_unary_args() {
     compile_all(b"(not)");
 }
 
 #[test]
-#[should_panic(expected = "incorrect argument count for unary primitive function Not")]
+#[should_panic(expected = "incorrect argument count for unary primitive function")]
 fn too_many_unary_args() {
     compile_all(b"(not 1 2)");
 }
 
 #[test]
-#[should_panic(expected = "Too few arguments provided to Sub")]
+#[should_panic(expected = "Too few arguments provided to NaryFold primitive function")]
 fn too_few_nary_args() {
     compile_all(b"(-)");
 }
