@@ -98,7 +98,7 @@ fn consume_null(input: &[u8]) -> Option<&[u8]> {
     }
 }
 
-fn consume_form<'a>(input: &'a [u8]) -> Option<(Vec<Expression<'a>>, &'a [u8])> {
+fn consume_form(input: &[u8]) -> Option<(Vec<Expression<'_>>, &[u8])> {
     if let Some(input) = consume_bytes(input, b"(") {
         let (args, input) = consume_expressions(consume_whitespace(input));
         if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
@@ -124,7 +124,7 @@ fn consume_int(input: &[u8]) -> Option<(u64, &[u8])> {
     let mut bytes_consumed: usize = 0;
     while bytes_consumed < input.len() && input[bytes_consumed].is_ascii_digit() {
         result *= 10;
-        result += (input[bytes_consumed] - b'0') as u64;
+        result += u64::from(input[bytes_consumed] - b'0');
         bytes_consumed += 1;
     }
     if bytes_consumed == 0 {
@@ -163,7 +163,7 @@ fn consume_whitespace(input: &[u8]) -> &[u8] {
     }
 }
 
-fn consume_expression<'a>(input: &'a [u8]) -> Option<(Expression<'a>, &'a [u8])> {
+fn consume_expression(input: &[u8]) -> Option<(Expression<'_>, &[u8])> {
     if let Some((v, input)) = consume_int(input) {
         Some((Expression::Int(v), input))
     } else if let Some((v, input)) = consume_bool(input) {
@@ -181,7 +181,7 @@ fn consume_expression<'a>(input: &'a [u8]) -> Option<(Expression<'a>, &'a [u8])>
     }
 }
 
-fn consume_expressions<'a>(mut input: &'a [u8]) -> (Vec<Expression<'a>>, &'a [u8]) {
+fn consume_expressions(mut input: &[u8]) -> (Vec<Expression<'_>>, &[u8]) {
     let mut result = Vec::new();
     while !input.is_empty()
         && let Some((exp, new_input)) = consume_expression(input)
@@ -194,18 +194,16 @@ fn consume_expressions<'a>(mut input: &'a [u8]) -> (Vec<Expression<'a>>, &'a [u8
 
 fn lower_expression<'a>(
     exp: Expression<'a>,
-    env: HashMap<&'a [u8], usize>,
+    env: &HashMap<&'a [u8], usize>,
     stack_slots_used: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
     match exp {
         Expression::Int(x) => result.push("LOAD ".to_owned() + &x.to_string()),
-        Expression::Char(x) => result.push("LOAD #\\".to_owned() + format!("x{:x}", x).as_str()),
+        Expression::Char(x) => result.push("LOAD #\\".to_owned() + format!("x{x:x}").as_str()),
         Expression::Bool(x) => result.push("LOAD ".to_owned() + if x { "#t" } else { "#f" }),
         Expression::Form(mut args) => {
-            if args.is_empty() {
-                panic!("Empty form!");
-            }
+            assert!(!args.is_empty(), "Empty form!");
             if let Expression::Symbol(name) = args.remove(0) {
                 if env.contains_key(name) {
                     todo!("Function calls are not yet implemented.")
@@ -213,24 +211,27 @@ fn lower_expression<'a>(
                 match name {
                     b"let" => {
                         if let Expression::Form(bindings) = args.remove(0) {
-                            let mut new_env = env.clone();
+                            let new_env = &mut env.clone();
                             let mut stack_slots_used = stack_slots_used;
                             let num_bindings = bindings.len();
 
                             for binding in bindings {
                                 if let Expression::Form(mut binding) = binding {
-                                    if binding.len() != 2 {
-                                        panic!("let binding has incorrect argument count.")
-                                    }
+                                    assert!(
+                                        binding.len() == 2,
+                                        "let binding has incorrect argument count."
+                                    );
                                     if let (Expression::Symbol(name), exp) =
                                         (binding.remove(0), binding.remove(0))
                                     {
-                                        if new_env.insert(name, stack_slots_used).is_some() {
-                                            panic!("Duplicate key in let binding");
-                                        }
+                                        let insert_rc = new_env.insert(name, stack_slots_used);
+                                        assert!(
+                                            insert_rc.is_none(),
+                                            "Duplicate key in let binding"
+                                        );
                                         result.append(&mut lower_expression(
                                             exp,
-                                            env.clone(),
+                                            &env.clone(),
                                             stack_slots_used,
                                         ));
                                         stack_slots_used += 1;
@@ -252,13 +253,11 @@ fn lower_expression<'a>(
                     }
                     b"if" => {
                         let mut stack_slots_used = stack_slots_used;
-                        if !matches!(args.len(), 2 | 3) {
-                            panic!("Invalid argument count to if")
-                        }
+                        assert!(matches!(args.len(), 2 | 3), "Invalid argument count to if");
                         // cond
                         result.append(&mut lower_expression(
                             args.remove(0),
-                            env.clone(),
+                            &env.clone(),
                             stack_slots_used,
                         ));
                         stack_slots_used += 1; // cond
@@ -269,11 +268,11 @@ fn lower_expression<'a>(
 
                         // consequent
                         let mut consequent_code =
-                            lower_expression(args.remove(0), env.clone(), stack_slots_used);
+                            lower_expression(args.remove(0), &env.clone(), stack_slots_used);
 
                         // alternative
                         let mut alternative_code = if let Some(alternative_code) = args.pop() {
-                            lower_expression(alternative_code, env.clone(), stack_slots_used)
+                            lower_expression(alternative_code, &env.clone(), stack_slots_used)
                         } else {
                             vec!["LOAD UNSPECIFIED".to_owned()]
                         };
@@ -307,32 +306,33 @@ fn lower_expression<'a>(
                         };
                         match arity {
                             PrimitiveFnArity::Unary => {
-                                if args.len() != 1 {
-                                    panic!("incorrect argument count for unary primitive function");
-                                }
+                                assert!(
+                                    args.len() == 1,
+                                    "incorrect argument count for unary primitive function"
+                                );
                                 for arg in args {
                                     result.append(&mut lower_expression(
                                         arg,
-                                        env.clone(),
+                                        &env.clone(),
                                         stack_slots_used,
                                     ));
                                 }
-                                result.push(mnemonic.to_owned())
+                                result.push(mnemonic.to_owned());
                             }
                             PrimitiveFnArity::NaryAllPairs(implementation_arity) => {
                                 let mut stack_slots_used = stack_slots_used;
                                 if args.len() < implementation_arity {
-                                    for arg in args.into_iter() {
+                                    for arg in args {
                                         result.append(&mut lower_expression(
                                             arg,
-                                            env.clone(),
+                                            &env.clone(),
                                             stack_slots_used,
                                         ));
                                         result.push("FORGET".to_owned());
                                     }
                                     result.append(&mut lower_expression(
                                         Expression::Bool(true),
-                                        env.clone(),
+                                        &env.clone(),
                                         stack_slots_used,
                                     ));
                                 } else {
@@ -340,7 +340,7 @@ fn lower_expression<'a>(
                                     for arg in args {
                                         result.append(&mut lower_expression(
                                             arg,
-                                            env.clone(),
+                                            &env.clone(),
                                             stack_slots_used,
                                         ));
                                         stack_slots_used += 1;
@@ -368,11 +368,10 @@ fn lower_expression<'a>(
                                 min_args,
                                 default_argument,
                             ) => {
-                                if args.len() < min_args {
-                                    panic!(
-                                        "Too few arguments provided to NaryFold primitive function."
-                                    );
-                                }
+                                assert!(
+                                    args.len() >= min_args,
+                                    "Too few arguments provided to NaryFold primitive function."
+                                );
                                 while args.len() < implementation_arity {
                                     args.insert(0, Expression::Int(default_argument));
                                 }
@@ -380,7 +379,7 @@ fn lower_expression<'a>(
                                 for (i, arg) in args.into_iter().enumerate() {
                                     result.append(&mut lower_expression(
                                         arg,
-                                        env.clone(),
+                                        &env.clone(),
                                         stack_slots_used,
                                     ));
                                     stack_slots_used += 1; // arg
@@ -415,21 +414,21 @@ fn lower_expression<'a>(
                 )
             }
         }
-    };
+    }
     result
 }
 
 fn lower_expressions<'a>(
     exps: Vec<Expression<'a>>,
-    env: HashMap<&'a [u8], usize>,
+    env: &HashMap<&'a [u8], usize>,
     stack_slots_used: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
     let num_exps = exps.len();
     for (i, exp) in exps.into_iter().enumerate() {
-        result.append(&mut lower_expression(exp, env.clone(), stack_slots_used));
+        result.append(&mut lower_expression(exp, &env.clone(), stack_slots_used));
         if i != num_exps - 1 {
-            result.push("FORGET".to_owned())
+            result.push("FORGET".to_owned());
         }
     }
     result
@@ -438,16 +437,14 @@ fn lower_expressions<'a>(
 fn compile_all(input_slice: &[u8]) -> Vec<String> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
     // dbg!(&ast);
-    if !input_slice.is_empty() {
-        panic!("Leftover data: {:?}", input_slice);
-    }
-    lower_expressions(ast, HashMap::new(), 0)
+    assert!(input_slice.is_empty(), "Leftover data: {input_slice:?}");
+    lower_expressions(ast, &HashMap::new(), 0)
 }
 
 fn main() {
     let mut input_vec = Vec::new();
     let _bytes_read = stdin().read_to_end(&mut input_vec);
-    println!("{}", compile_all(&input_vec[..]).join("\n"))
+    println!("{}", compile_all(&input_vec[..]).join("\n"));
 }
 
 #[test]
