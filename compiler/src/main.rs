@@ -24,6 +24,7 @@ fn starts_with_delimiter(input: &[u8]) -> bool {
 
 fn is_symbol_start_char(v: u8) -> bool {
     v.is_ascii_alphabetic()
+        || v.is_ascii_digit()
         || matches!(
             v,
             b'-' | b'+'
@@ -47,7 +48,7 @@ fn is_symbol_start_char(v: u8) -> bool {
 }
 
 fn is_symbol_char(v: u8) -> bool {
-    is_symbol_start_char(v) || v.is_ascii_digit()
+    is_symbol_start_char(v) || v == b'#'
 }
 
 fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
@@ -61,7 +62,7 @@ fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
     }
 
     let (symbol, input) = input.split_at(bytes_consumed);
-    if starts_with_delimiter(input) {
+    if starts_with_delimiter(input) && !symbol.ends_with(b"#") {
         Some((symbol, input))
     } else {
         None
@@ -482,7 +483,10 @@ fn lower_expressions<'a>(
 fn compile_all(input_slice: &[u8]) -> Vec<String> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
     // dbg!(&ast);
-    assert!(input_slice.is_empty(), "Parsing failed. Leftover data: {input_slice:?}");
+    assert!(
+        input_slice.is_empty(),
+        "Parsing failed. Leftover data: {input_slice:?}"
+    );
     lower_expressions(ast, &HashMap::new(), 0)
 }
 
