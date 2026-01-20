@@ -62,7 +62,7 @@ fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
     }
 
     let (symbol, input) = input.split_at(bytes_consumed);
-    if starts_with_delimiter(input) && !symbol.ends_with(b"#") {
+    if starts_with_delimiter(input) && !symbol.ends_with(b"#") && symbol.iter().any(|c| !c.is_ascii_digit()) {
         Some((symbol, input))
     } else {
         None
@@ -572,4 +572,10 @@ fn use_undefined_variable() {
 #[should_panic(expected = "Parsing failed. Leftover data: [35, 124, 32, 35, 124, 32, 124, 35]")]
 fn mismatched_nested_comment() {
     compile_all(b"#| #| |#");
+}
+
+#[test]
+#[should_panic(expected = "let binding args are not (Symbol, Expr)")]
+fn numeric_symbol() {
+    compile_all(b"(let ((1 0)) 1)");
 }
