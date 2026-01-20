@@ -15,15 +15,11 @@ enum Expression<'a> {
 }
 
 fn is_delimiter(v: u8) -> bool {
-    v.is_ascii_whitespace() || matches!(v, b'(' | b')')
+    v.is_ascii_whitespace() || matches!(v, b'(' | b')' | b';')
 }
 
 fn starts_with_delimiter(input: &[u8]) -> bool {
     input.is_empty() || is_delimiter(input[0])
-}
-
-fn is_ascii_printable(v: u8) -> bool {
-    v.is_ascii_alphanumeric() || v.is_ascii_punctuation()
 }
 
 fn is_symbol_start_char(v: u8) -> bool {
@@ -74,7 +70,7 @@ fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
 
 fn consume_character(input: &[u8]) -> Option<(u8, &[u8])> {
     if let Some(input) = consume_bytes(input, b"#\\") {
-        if !input.is_empty() && is_ascii_printable(input[0]) && starts_with_delimiter(&input[1..]) {
+        if !input.is_empty() && starts_with_delimiter(&input[1..]) {
             Some((input[0], &input[1..]))
         } else {
             None
@@ -149,11 +145,54 @@ fn consume_bool(input: &[u8]) -> Option<(bool, &[u8])> {
     }
 }
 
-fn consume_whitespace(input: &[u8]) -> &[u8] {
-    if input.is_empty() || !input[0].is_ascii_whitespace() {
-        input
+fn consume_line_comment(input: &[u8]) -> Option<&[u8]> {
+    if let Some(mut input) = consume_bytes(input, b";") {
+        loop {
+            if input.is_empty() || input.starts_with(b"\n") {
+                return Some(input);
+            }
+            input = &input[1..];
+        }
     } else {
+        None
+    }
+}
+
+fn consume_nested_comment(input: &[u8]) -> Option<&[u8]> {
+    if let Some(mut input) = consume_bytes(input, b"#|") {
+        loop {
+            if input.is_empty() {
+                return None;
+            }
+            if let Some(input) = consume_bytes(input, b"|#") {
+                return Some(input);
+            }
+            if input.starts_with(b"#|") {
+                if let Some(new_input) = consume_nested_comment(input) {
+                    input = new_input;
+                } else {
+                    return None;
+                }
+            } else {
+                input = &input[1..];
+            }
+        }
+    } else {
+        None
+    }
+}
+
+fn consume_whitespace(input: &[u8]) -> &[u8] {
+    if input.is_empty() {
+        input
+    } else if input[0].is_ascii_whitespace() {
         consume_whitespace(&input[1..])
+    } else if let Some(input) = consume_line_comment(input) {
+        consume_whitespace(input)
+    } else if let Some(input) = consume_nested_comment(input) {
+        consume_whitespace(input)
+    } else {
+        input
     }
 }
 
@@ -443,7 +482,7 @@ fn lower_expressions<'a>(
 fn compile_all(input_slice: &[u8]) -> Vec<String> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
     // dbg!(&ast);
-    assert!(input_slice.is_empty(), "Leftover data: {input_slice:?}");
+    assert!(input_slice.is_empty(), "Parsing failed. Leftover data: {input_slice:?}");
     lower_expressions(ast, &HashMap::new(), 0)
 }
 
@@ -496,7 +535,7 @@ fn too_many_if_args() {
 }
 
 #[test]
-#[should_panic(expected = "Leftover data: [93]")]
+#[should_panic(expected = "Parsing failed. Leftover data: [93]")]
 fn leftover_data() {
     compile_all(b"]");
 }
@@ -523,4 +562,10 @@ fn too_few_nary_args() {
 #[should_panic(expected = "Couldn't find environment entry for \"a\"")]
 fn use_undefined_variable() {
     compile_all(b"a");
+}
+
+#[test]
+#[should_panic(expected = "Parsing failed. Leftover data: [35, 124, 32, 35, 124, 32, 124, 35]")]
+fn mismatched_nested_comment() {
+    compile_all(b"#| #| |#");
 }
