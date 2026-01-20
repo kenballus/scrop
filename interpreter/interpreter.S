@@ -441,6 +441,10 @@ and:
 .section .text.done
 .global done
 done:
+    test r12, r12
+    jne 1f
+    PUSH(UNSPECIFIED)
+1:
     mov rdi, qword ptr [rbx]  // Grab what's on top of the stack
     mov rsp, rbp              // Put the stack back :)
     and rsp, -16              // Align the stack for a real function call
