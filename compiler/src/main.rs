@@ -62,7 +62,7 @@ fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
     }
 
     let (symbol, input) = input.split_at(bytes_consumed);
-    if starts_with_delimiter(input) && !symbol.ends_with(b"#") && symbol.iter().any(|c| !c.is_ascii_digit()) {
+    if starts_with_delimiter(input) && symbol.iter().any(|c| !c.is_ascii_digit()) {
         Some((symbol, input))
     } else {
         None
