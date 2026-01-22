@@ -183,6 +183,18 @@ fn consume_nested_comment(input: &[u8]) -> Option<&[u8]> {
     }
 }
 
+fn consume_datum_comment(input: &[u8]) -> Option<&[u8]> {
+    if let Some(input) = consume_bytes(input, b"#;") {
+        if let Some((_, input)) = consume_expression(consume_whitespace(input)) {
+            Some(input)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 fn consume_whitespace(input: &[u8]) -> &[u8] {
     if input.is_empty() {
         input
@@ -191,6 +203,8 @@ fn consume_whitespace(input: &[u8]) -> &[u8] {
     } else if let Some(input) = consume_line_comment(input) {
         consume_whitespace(input)
     } else if let Some(input) = consume_nested_comment(input) {
+        consume_whitespace(input)
+    } else if let Some(input) = consume_datum_comment(input) {
         consume_whitespace(input)
     } else {
         input
