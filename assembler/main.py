@@ -113,6 +113,12 @@ def main() -> None:
                 opcode = 0xfa11000
             case ["AND"]:
                 opcode = 0xc001000
+            case ["CONS"]:
+                opcode = 0xc0c0000
+            case ["CAR"]:
+                opcode = 0xca00000
+            case ["CDR"]:
+                opcode = 0xcd00000
             case _:
                 raise ValueError(f"Couldn't parse line {line}")
         os.write(1, opcode.to_bytes(8, "little") + immediate)

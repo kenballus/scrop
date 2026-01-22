@@ -1,23 +1,24 @@
 #define _GNU_SOURCE
 
+#include <assert.h>   // for assert
 #include <inttypes.h> // for PRIu64, PRIx64
 #include <signal.h>   // for sigset_t, sigfillset, sigprocmask, SIG_SETMASK
 #include <stddef.h>   // for NULL
 #include <stdint.h>   // for uint64_t, intmax_t
 #include <stdio.h>    // for getdelim, stdin, EOF, printf, stderr, fputs
 #include <stdlib.h>   // for EXIT_*, exit
-#include <sys/mman.h> // for mmap, PROT_*, MAP_*
 
 #include "constants.h"
 
-[[noreturn]] void interpret(void *ip, void *sp);
+[[noreturn]] void interpret(void *ip, void *sp, void *hp);
 
 bool is_valid_opcode(uint64_t const opcode) {
     static uint64_t const OPCODES[] = {
         0xadd1000, 0x50b1000, 0xd0d0000, 0x10ad000, 0x0add000, 0x050b000,
         0x0a55000, 0x1001000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
         0xca7000,  0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000,
-        0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc001000};
+        0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc001000,
+        0xc0c0000, 0xcd00000, 0xca00000};
     for (size_t i = 0; i < _Countof(OPCODES); i++) {
         if (opcode == OPCODES[i]) {
             return true;
@@ -36,6 +37,7 @@ void validate_bytecode(uint64_t const *const bytecode,
     for (size_t i = 0; i < num_bytecode_words; i++) {
         if (!is_valid_opcode(bytecode[i * 2])) {
             fprintf(stderr, "Invalid opcode %" PRIx64 "\n", bytecode[i * 2]);
+            exit(EXIT_FAILURE);
         }
     }
 }
@@ -65,29 +67,42 @@ int main(void) {
     }
     validate_bytecode(bytecode, bytes_read);
 
-    void *const stack = mmap(NULL, STACK_SIZE_IN_BYTES, PROT_READ | PROT_WRITE,
-                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (!stack) {
-        return EXIT_FAILURE;
-    }
+    static uint8_t stack[STACK_SIZE_IN_BYTES];
+    assert(((uintptr_t)stack & 0b000) == 0);
 
-    interpret(bytecode, stack);
+    static uint8_t heap[HEAP_SIZE_IN_BYTES];
+    assert(((uintptr_t)heap & 0b000) == 0);
+
+    interpret(bytecode, stack, heap);
 }
 
-void print_value_and_exit(uint64_t v) {
+void print_value(uint64_t const v) {
     if ((v & INT_MASK) == INT_SUFFIX) {
-        printf("%" PRIu64 "\n", v >> 2);
+        printf("%" PRIu64, v >> 2);
     } else if (v == TRUE) {
-        puts("#t");
+        printf("#t");
     } else if (v == FALSE) {
-        puts("#f");
+        printf("#f");
     } else if ((v & CHAR_MASK) == CHAR_SUFFIX) {
-        printf("#\\%c\n", (char)(v >> 8));
+        printf("#\\%c", (char)(v >> 8));
     } else if (v == TAGGED_NULL) {
-        puts("'()");
+        printf("'()");
+    } else if ((v & PAIR_MASK) == PAIR_SUFFIX) {
+        uint64_t car = *(uint64_t *)(v & -2);
+        uint64_t cdr = *(uint64_t *)((v & -2) + 8);
+        printf("(");
+        print_value(car);
+        printf(" . ");
+        print_value(cdr);
+        printf(")");
     } else if (v != UNSPECIFIED) {
-        printf("Exit value is malformed: %" PRIu64 "\n", v);
+        printf("value is malformed: %" PRIu64 "\n", v);
         exit(EXIT_FAILURE);
     }
+}
+
+void print_value_and_exit(uint64_t const v) {
+    print_value(v);
+    puts("");
     exit(EXIT_SUCCESS);
 }

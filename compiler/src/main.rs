@@ -320,16 +320,17 @@ fn lower_if<'a>(
     result
 }
 
-fn lower_unary_primitive<'a>(
+fn lower_nary_primitive<'a>(
     mnemonic: &str,
+    n: usize,
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     stack_slots_used: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
     assert!(
-        args.len() == 1,
-        "incorrect argument count for unary primitive function"
+        args.len() == n,
+        "incorrect argument count for {n}-ary primitive"
     );
     for arg in args {
         result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
@@ -338,7 +339,7 @@ fn lower_unary_primitive<'a>(
     result
 }
 
-fn lower_nary_all_pairs_primitive<'a>(
+fn lower_variadic_all_pairs_primitive<'a>(
     implementation_arity: usize,
     mnemonic: &str,
     args: Vec<Expression<'a>>,
@@ -383,7 +384,7 @@ fn lower_nary_all_pairs_primitive<'a>(
     result
 }
 
-fn lower_nary_fold_primitive<'a>(
+fn lower_variadic_fold_primitive<'a>(
     implementation_arity: usize,
     min_args: usize,
     default_argument: u64,
@@ -395,7 +396,7 @@ fn lower_nary_fold_primitive<'a>(
     let mut result = Vec::new();
     assert!(
         args.len() >= min_args,
-        "Too few arguments provided to nary fold primitive function."
+        "Too few arguments provided to variadic fold primitive"
     );
     while args.len() < implementation_arity {
         args.insert(0, Expression::Int(default_argument));
@@ -431,22 +432,25 @@ fn lower_form<'a>(
         match name {
             b"let" => lower_let(args, env, stack_slots_used),
             b"if" => lower_if(args, env, stack_slots_used),
-            b"add1" => lower_unary_primitive("ADD1", args, env, stack_slots_used),
-            b"sub1" => lower_unary_primitive("SUB1", args, env, stack_slots_used),
-            b"zero?" => lower_unary_primitive("ZEROP", args, env, stack_slots_used),
-            b"integer?" => lower_unary_primitive("INTEGERP", args, env, stack_slots_used),
-            b"boolean?" => lower_unary_primitive("BOOLEANP", args, env, stack_slots_used),
-            b"char?" => lower_unary_primitive("CHARP", args, env, stack_slots_used),
-            b"null?" => lower_unary_primitive("NULLP", args, env, stack_slots_used),
-            b"not" => lower_unary_primitive("NOT", args, env, stack_slots_used),
-            b"char->integer" => lower_unary_primitive("CHARTOINT", args, env, stack_slots_used),
-            b"integer->char" => lower_unary_primitive("INTTOCHAR", args, env, stack_slots_used),
-            b"+" => lower_nary_fold_primitive(2, 0, 0, "ADD", args, env, stack_slots_used),
-            b"-" => lower_nary_fold_primitive(2, 1, 0, "SUB", args, env, stack_slots_used),
-            b"*" => lower_nary_fold_primitive(2, 0, 1, "MUL", args, env, stack_slots_used),
-            b"<" => lower_nary_all_pairs_primitive(2, "LT", args, env, stack_slots_used),
-            b"=" => lower_nary_all_pairs_primitive(2, "EQ", args, env, stack_slots_used),
-            b"eq?" => lower_nary_all_pairs_primitive(2, "EQP", args, env, stack_slots_used),
+            b"add1" => lower_nary_primitive("ADD1", 1, args, env, stack_slots_used),
+            b"sub1" => lower_nary_primitive("SUB1", 1, args, env, stack_slots_used),
+            b"zero?" => lower_nary_primitive("ZEROP", 1, args, env, stack_slots_used),
+            b"integer?" => lower_nary_primitive("INTEGERP", 1, args, env, stack_slots_used),
+            b"boolean?" => lower_nary_primitive("BOOLEANP", 1, args, env, stack_slots_used),
+            b"char?" => lower_nary_primitive("CHARP", 1, args, env, stack_slots_used),
+            b"null?" => lower_nary_primitive("NULLP", 1, args, env, stack_slots_used),
+            b"not" => lower_nary_primitive("NOT", 1, args, env, stack_slots_used),
+            b"char->integer" => lower_nary_primitive("CHARTOINT", 1, args, env, stack_slots_used),
+            b"integer->char" => lower_nary_primitive("INTTOCHAR", 1, args, env, stack_slots_used),
+            b"+" => lower_variadic_fold_primitive(2, 0, 0, "ADD", args, env, stack_slots_used),
+            b"-" => lower_variadic_fold_primitive(2, 1, 0, "SUB", args, env, stack_slots_used),
+            b"*" => lower_variadic_fold_primitive(2, 0, 1, "MUL", args, env, stack_slots_used),
+            b"<" => lower_variadic_all_pairs_primitive(2, "LT", args, env, stack_slots_used),
+            b"=" => lower_variadic_all_pairs_primitive(2, "EQ", args, env, stack_slots_used),
+            b"eq?" => lower_variadic_all_pairs_primitive(2, "EQP", args, env, stack_slots_used),
+            b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
+            b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
+            b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),
             _ => panic!("Cannot resolve symbol '{name:?}'"),
         }
     } else {
@@ -559,20 +563,20 @@ fn leftover_data() {
 }
 
 #[test]
-#[should_panic(expected = "incorrect argument count for unary primitive function")]
+#[should_panic(expected = "incorrect argument count for 1-ary primitive")]
 fn too_few_unary_args() {
     compile_all(b"(not)");
 }
 
 #[test]
-#[should_panic(expected = "incorrect argument count for unary primitive function")]
+#[should_panic(expected = "incorrect argument count for 1-ary primitive")]
 fn too_many_unary_args() {
     compile_all(b"(not 1 2)");
 }
 
 #[test]
-#[should_panic(expected = "Too few arguments provided to nary fold primitive function")]
-fn too_few_nary_args() {
+#[should_panic(expected = "Too few arguments provided to variadic fold primitive")]
+fn too_few_variadic_args() {
     compile_all(b"(-)");
 }
 

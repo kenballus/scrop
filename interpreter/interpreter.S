@@ -5,6 +5,7 @@
 // rbx is our sp
 // rsp is our pc
 // rbp holds our original rsp, so we can do tricks :)
+// rdx is out heap pointer
 // r12 holds how many stack slots are currently in use.
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
 // Each opcode is simply the address of its implementation.
@@ -69,6 +70,13 @@
     POP(R64) ; \
     jbe LABEL
 
+#define JMP_IF_PAIR(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, PAIR_MASK ; \
+    cmp R64, PAIR_SUFFIX ; \
+    POP(R64) ; \
+    je LABEL
+
 #define TAG_INT(R64) \
     shl R64, 2
 
@@ -89,6 +97,12 @@
     shl R64, 8 ; \
     or R64, CHAR_SUFFIX
 
+#define TAG_PAIR(R64) \
+    or R64, 1
+
+#define UNTAG_PAIR(R64) \
+    and R64, -2
+
 .section .text
 
 stack_overflow:
@@ -105,6 +119,7 @@ interpret:
     mov rbp, rsp // Save the original rsp
     mov rsp, rdi // Load up the interpreter pc
     lea rbx, [rsi - 8] // Load up the interpreter sp
+    // rdx contains heap pointer
     xor r12d, r12d // 0 stack slots are in use
     ret
 
@@ -169,9 +184,9 @@ sub:
 1:
     UNTAG_INT(rax)
     UNTAG_INT(rcx)
-    sub rax, rcx
-    TAG_INT(rax)
-    PUSH(rax)
+    sub rcx, rax
+    TAG_INT(rcx)
+    PUSH(rcx)
     ret
 
 .section .text.mul
@@ -436,6 +451,46 @@ and:
     ret
 1:
     PUSH(FALSE)
+    ret
+
+.section .text.cons
+.global cons
+cons:
+    add rsp, 8 // Skip immediate
+    POP(rax) // cdr
+    POP(rcx) // car
+    mov rdi, rdx // heap pointer
+    add rdx, 16
+    mov qword ptr [rdi], rcx
+    mov qword ptr [rdi + 8], rax
+    or rdi, 1
+    PUSH(rdi)
+    ret
+
+.section .text.car
+.global car
+car:
+    add rsp, 8 // Skip immediate
+    POP(rax)
+    JMP_IF_PAIR(rax, 1f)
+    ud2
+1:
+    UNTAG_PAIR(rax)
+    mov rax, qword ptr [rax]
+    PUSH(rax)
+    ret
+
+.section .text.cdr
+.global cdr
+cdr:
+    add rsp, 8 // Skip immediate
+    POP(rax)
+    JMP_IF_PAIR(rax, 1f)
+    ud2
+1:
+    UNTAG_PAIR(rax)
+    mov rax, qword ptr [rax + 8]
+    PUSH(rax)
     ret
 
 .section .text.done

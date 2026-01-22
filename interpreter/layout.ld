@@ -123,4 +123,18 @@ SECTIONS {
         *(forget)
     }
 
+    . = 0xc0c0000;
+    .text.cons : {
+        *(cons)
+    }
+
+    . = 0xca00000;
+    .text.car : {
+        *(car)
+    }
+
+    . = 0xcd00000;
+    .text.cdr : {
+        *(cdr)
+    }
 }
