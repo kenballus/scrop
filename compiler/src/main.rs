@@ -4,7 +4,7 @@ use std::{
     str::from_utf8,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Expression<'a> {
     Int(u64),
     Bool(bool),
@@ -387,7 +387,7 @@ fn lower_variadic_all_pairs_primitive<'a>(
 fn lower_variadic_fold_primitive<'a>(
     implementation_arity: usize,
     min_args: usize,
-    default_argument: u64,
+    default_argument: Expression<'a>,
     mnemonic: &str,
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
@@ -399,7 +399,7 @@ fn lower_variadic_fold_primitive<'a>(
         "Too few arguments provided to variadic fold primitive"
     );
     while args.len() < implementation_arity {
-        args.insert(0, Expression::Int(default_argument));
+        args.insert(0, default_argument.clone());
     }
     let mut stack_slots_used = stack_slots_used;
     for (i, arg) in args.into_iter().enumerate() {
@@ -442,9 +442,9 @@ fn lower_form<'a>(
             b"not" => lower_nary_primitive("NOT", 1, args, env, stack_slots_used),
             b"char->integer" => lower_nary_primitive("CHARTOINT", 1, args, env, stack_slots_used),
             b"integer->char" => lower_nary_primitive("INTTOCHAR", 1, args, env, stack_slots_used),
-            b"+" => lower_variadic_fold_primitive(2, 0, 0, "ADD", args, env, stack_slots_used),
-            b"-" => lower_variadic_fold_primitive(2, 1, 0, "SUB", args, env, stack_slots_used),
-            b"*" => lower_variadic_fold_primitive(2, 0, 1, "MUL", args, env, stack_slots_used),
+            b"+" => lower_variadic_fold_primitive(2, 0, Expression::Int(0), "ADD", args, env, stack_slots_used),
+            b"-" => lower_variadic_fold_primitive(2, 1, Expression::Int(0), "SUB", args, env, stack_slots_used),
+            b"*" => lower_variadic_fold_primitive(2, 0, Expression::Int(1), "MUL", args, env, stack_slots_used),
             b"<" => lower_variadic_all_pairs_primitive(2, "LT", args, env, stack_slots_used),
             b"=" => lower_variadic_all_pairs_primitive(2, "EQ", args, env, stack_slots_used),
             b"eq?" => lower_variadic_all_pairs_primitive(2, "EQP", args, env, stack_slots_used),
