@@ -80,7 +80,7 @@ void print_value(uint64_t const v) {
     if ((v & INT_MASK) == INT_SUFFIX) {
         int64_t untagged_v = v >> 2;
         if (untagged_v >= 0x2000000000000000ll) {
-            untagged_v = 0x4000000000000000ll - untagged_v;
+            untagged_v += -0x4000000000000000ll;
         }
         printf("%" PRIi64, untagged_v);
     } else if (v == TRUE) {

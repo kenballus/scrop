@@ -351,7 +351,11 @@ fn lower_variadic_primitive<'a>(
         "Too few arguments provided to variadic primitive"
     );
     for (i, arg) in args.into_iter().rev().enumerate() {
-        result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used + i));
+        result.append(&mut lower_expression(
+            arg,
+            &env.clone(),
+            stack_slots_used + i,
+        ));
     }
     result.push(format!("{mnemonic} {num_args}"));
     result

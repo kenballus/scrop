@@ -92,7 +92,7 @@
     V << 2
 
 #define UNTAG_INT(R64) \
-    shr R64, 2
+    sar R64, 2
 
 #define TAG_BOOL(R64) \
     shl R64, 7 ; \
