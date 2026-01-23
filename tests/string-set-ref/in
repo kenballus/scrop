@@ -1,0 +1,1 @@
+(let ((s (string #\a #\n #\g #\u #\l #\a #\r))) (string-set! s 0 #\b) s)
