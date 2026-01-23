@@ -115,6 +115,8 @@ def main() -> None:
                 opcode = 0xEEEE000
             case ["STRINGREF"]:
                 opcode = 0x571e000
+            case ["STRINGSET"]:
+                opcode = 0x5715000
             case ["INTEGERP"]:
                 opcode = 0x1234000
             case ["BOOLEANP"]:

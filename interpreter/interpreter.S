@@ -648,6 +648,36 @@ stringref:
 1:
     ud2
 
+.section .text.stringset
+.global stringset
+stringset:
+    add rsp, 8
+    POP(rsi) // char
+    JMP_IF_CHAR(rsi, 1f)
+    ud2
+1:
+    UNTAG_CHAR(rsi)
+    POP(rcx) // index
+    JMP_IF_INT(rcx, 1f)
+    ud2
+1:
+    UNTAG_INT(rcx)
+    POP(rax) // string
+    JMP_IF_STRING(rax, 1f)
+    ud2
+1:
+    UNTAG_STRING(rax)
+    mov rdi, qword ptr [rax]
+    cmp rcx, rax
+    jae 1f
+    mov byte ptr [rax + rcx + 8], sil
+    and rax, 0xff
+    TAG_CHAR(rax)
+    PUSH(rax)
+    ret
+1:
+    ud2
+
 .section .text.done
 .global done
 done:

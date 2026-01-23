@@ -143,4 +143,8 @@ SECTIONS {
         *(stringref)
     }
 
+    . = 0x5715000;
+    .text.stringset : {
+        *(stringset)
+    }
 }
