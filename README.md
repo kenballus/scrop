@@ -1,6 +1,6 @@
 # scrop
 
-this is only tested on x86\_64 linux with clang 21.1.6.
+only tested on x86\_64 linux with clang 21.1.6.
 almost certainly doesn't work with anything else.
 
 ## what's where
