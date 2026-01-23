@@ -137,4 +137,10 @@ SECTIONS {
     .text.string : {
         *(string)
     }
+
+    . = 0x571e000;
+    .text.stringref : {
+        *(stringref)
+    }
+
 }

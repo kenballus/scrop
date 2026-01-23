@@ -113,6 +113,8 @@ def main() -> None:
                 immediate = int(v).to_bytes(8, "little")
             case ["ZEROP"]:
                 opcode = 0xEEEE000
+            case ["STRINGREF"]:
+                opcode = 0x571e000
             case ["INTEGERP"]:
                 opcode = 0x1234000
             case ["BOOLEANP"]:

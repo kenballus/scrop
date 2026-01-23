@@ -78,7 +78,7 @@ fn consume_string(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
                 panic!("Unrecognized escape sequence in string literal!");
             } else {
                 result.push(input[0]);
-                input = &input[1..]
+                input = &input[1..];
             }
         }
         Some((result, input))
@@ -311,7 +311,7 @@ fn lower_let<'a>(
         let new_env = &mut env.clone();
         new_env.extend(new_bindings.drain());
         result.append(&mut lower_expressions(args, new_env, stack_slots_used));
-        result.push(format!("FALL {num_bindings}"))
+        result.push(format!("FALL {num_bindings}"));
     } else {
         panic!("let bindings is not a form")
     }
@@ -429,6 +429,7 @@ fn lower_form<'a>(
             b"=" => lower_variadic_primitive(0, "EQ", args, env, stack_slots_used),
             b"eq?" => lower_variadic_primitive(0, "EQP", args, env, stack_slots_used),
             b"string" => lower_variadic_primitive(0, "STRING", args, env, stack_slots_used),
+            b"string-ref" => lower_nary_primitive("STRINGREF", 2, args, env, stack_slots_used),
             b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
             b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
             b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),
@@ -463,7 +464,7 @@ fn lower_expression<'a>(
         Expression::String(v) => lower_variadic_primitive(
             0,
             "STRING",
-            v.into_iter().map(|c| Expression::Char(c)).collect(),
+            v.into_iter().map(Expression::Char).collect(),
             env,
             stack_slots_used,
         ),

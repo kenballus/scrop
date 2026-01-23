@@ -126,7 +126,7 @@
     or R64, 0b11
 
 #define UNTAG_STRING(R64) \
-    or R64, -4
+    and R64, -4
 
 .section .text
 
@@ -622,6 +622,31 @@ string:
     inc rsi
     dec rdi
     jmp 2b
+
+.section .text.stringref
+.global stringref
+stringref:
+    add rsp, 8
+    POP(rcx) // index
+    JMP_IF_INT(rcx, 1f)
+    ud2
+1:
+    UNTAG_INT(rcx)
+    POP(rax) // string
+    JMP_IF_STRING(rax, 1f)
+    ud2
+1:
+    UNTAG_STRING(rax)
+    mov rdi, qword ptr [rax]
+    cmp rcx, rax
+    jae 1f
+    mov al, byte ptr [rax + rcx + 8]
+    and rax, 0xff
+    TAG_CHAR(rax)
+    PUSH(rax)
+    ret
+1:
+    ud2
 
 .section .text.done
 .global done
