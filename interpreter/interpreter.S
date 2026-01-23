@@ -4,8 +4,7 @@
 
 // rbx is our sp
 // rsp is our pc
-// rbp holds our original rsp, so we can do tricks :)
-// rdx is out heap pointer
+// rbp is our hp
 // r12 holds how many stack slots are currently in use.
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
 // Each opcode is simply the address of its implementation.
@@ -141,10 +140,9 @@ zero_location:
 
 .global interpret
 interpret:
-    mov rbp, rsp // Save the original rsp
-    mov rsp, rdi // Load up the interpreter pc
-    lea rbx, [rsi - 8] // Load up the interpreter sp
-    // rdx contains heap pointer
+    mov rbp, rsp // vm heap pointer
+    mov rsp, rdi // vm instruction pointer
+    lea rbx, [rsi - 8] // vm stack pointer
     xor r12d, r12d // 0 stack slots are in use
     ret
 
@@ -558,8 +556,8 @@ cons:
     add rsp, 8 // Skip immediate
     POP(rax) // cdr
     POP(rcx) // car
-    mov rdi, rdx // heap pointer
-    add rdx, 16
+    sub rbp, 16 // alloc(16)
+    mov rdi, rbp // heap pointer
     mov qword ptr [rdi], rcx
     mov qword ptr [rdi + 8], rax
     or rdi, 1
@@ -596,15 +594,12 @@ cdr:
 .global string
 string:
     pop rdi // arity
-    mov rax, rdx // result
-    mov qword ptr [rdx], rdi // write it into the struct
-    add rdx, 8 // inc hp
-    add rdx, rdi // add arity
-    and rsi, 0b111
-    neg rsi
-    add rsi, 8
-    and rsi, 0b111
-    add rdx, rsi // rdx = UP_TO_8(rdx)
+    // alloc(UP_TO_8(arity) + 8)
+    sub rbp, rdi
+    and rbp, -8
+    sub rbp, 8
+    mov rax, rbp // result
+    mov qword ptr [rbp], rdi // write arity into the struct
     xor esi, esi
 2:
     test rdi, rdi
@@ -678,6 +673,11 @@ stringset:
 1:
     ud2
 
+.section .text.stringappend
+.global stringappend
+stringappend:
+    ud2
+
 .section .text.done
 .global done
 done:
@@ -688,7 +688,7 @@ done:
     cmp r12, 1
     jne 1f
     mov rdi, qword ptr [rbx]  // Grab what's on top of the stack
-    mov rsp, rbp              // Put the stack back :)
+    xchg rsp, rbp             // Put the stack back
     and rsp, -16              // Align the stack for a real function call
     call print_value_and_exit // Call back into C
 1:

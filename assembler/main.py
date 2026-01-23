@@ -15,12 +15,12 @@ class Unspecified:
     pass
 
 
-Value = int | bool | Char | None | Unspecified
+Immediate = int | bool | Char | None | Unspecified
 
 CHAR_PREFIX: str = "#\\"
 
 
-def parse_immediate(s: str) -> Value:
+def parse_immediate(s: str) -> Immediate:
     match s:
         case "#f" | "#F":
             return False
@@ -50,7 +50,7 @@ def parse_immediate(s: str) -> Value:
     raise ValueError(f"Couldn't parse immediate {s}")
 
 
-def serialize_immediate(v: Value) -> bytes:
+def serialize_immediate(v: Immediate) -> bytes:
     if isinstance(v, bool):
         return (0b10011111 if v else 0b00011111).to_bytes(8, "little")
     if isinstance(v, int):
@@ -117,6 +117,9 @@ def main() -> None:
                 opcode = 0x571e000
             case ["STRINGSET"]:
                 opcode = 0x5715000
+            case ["STRINGAPPEND", v]:
+                opcode = 0x571A000
+                immediate = int(v).to_bytes(8, "little")
             case ["INTEGERP"]:
                 opcode = 0x1234000
             case ["BOOLEANP"]:

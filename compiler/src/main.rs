@@ -429,6 +429,7 @@ fn lower_form<'a>(
             b"=" => lower_variadic_primitive(0, "EQ", args, env, stack_slots_used),
             b"eq?" => lower_variadic_primitive(0, "EQP", args, env, stack_slots_used),
             b"string" => lower_variadic_primitive(0, "STRING", args, env, stack_slots_used),
+            b"string-append" => lower_variadic_primitive(0, "STRINGAPPEND", args, env, stack_slots_used),
             b"string-ref" => lower_nary_primitive("STRINGREF", 2, args, env, stack_slots_used),
             b"string-set!" => lower_nary_primitive("STRINGSET", 3, args, env, stack_slots_used),
             b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),

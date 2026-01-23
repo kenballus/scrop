@@ -147,4 +147,9 @@ SECTIONS {
     .text.stringset : {
         *(stringset)
     }
+
+    . = 0x571a000;
+    .text.stringappend : {
+        *(stringappend)
+    }
 }
