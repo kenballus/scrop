@@ -17,6 +17,7 @@
 // - 00101111 => '()
 // -   all 1s => #<unspecified>
 // -      001 => pair
+// -      011 => string
 
 // Needs to preserve flags
 #define PUSH(X) \
@@ -85,6 +86,13 @@
     POP(R64) ; \
     je LABEL
 
+#define JMP_IF_STRING(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, STRING_MASK ; \
+    cmp R64, STRING_SUFFIX ; \
+    POP(R64) ; \
+    je LABEL
+
 #define TAG_INT(R64) \
     shl R64, 2
 
@@ -113,6 +121,12 @@
 
 #define UNTAG_PAIR(R64) \
     and R64, -2
+
+#define TAG_STRING(R64) \
+    or R64, 0b11
+
+#define UNTAG_STRING(R64) \
+    or R64, -4
 
 .section .text
 
@@ -577,6 +591,37 @@ cdr:
     mov rax, qword ptr [rax + 8]
     PUSH(rax)
     ret
+
+.section .text.string
+.global string
+string:
+    pop rdi // arity
+    mov rax, rdx // result
+    mov qword ptr [rdx], rdi // write it into the struct
+    add rdx, 8 // inc hp
+    add rdx, rdi // add arity
+    and rsi, 0b111
+    neg rsi
+    add rsi, 8
+    and rsi, 0b111
+    add rdx, rsi // rdx = UP_TO_8(rdx)
+    xor esi, esi
+2:
+    test rdi, rdi
+    jne 1f
+    TAG_STRING(rax)
+    PUSH(rax)
+    ret
+1:
+    POP(rcx)
+    JMP_IF_CHAR(rcx, 1f)
+    ud2
+1:
+    UNTAG_CHAR(rcx)
+    mov byte ptr [rax + rsi + 8], cl
+    inc rsi
+    dec rdi
+    jmp 2b
 
 .section .text.done
 .global done

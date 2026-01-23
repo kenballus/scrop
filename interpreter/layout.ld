@@ -132,4 +132,9 @@ SECTIONS {
     .text.cdr : {
         *(cdr)
     }
+
+    . = 0x571f000;
+    .text.string : {
+        *(string)
+    }
 }

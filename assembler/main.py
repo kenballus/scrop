@@ -108,6 +108,9 @@ def main() -> None:
             case ["EQP", v]:
                 opcode = 0x3E3E000
                 immediate = int(v).to_bytes(8, "little")
+            case ["STRING", v]:
+                opcode = 0x571f000
+                immediate = int(v).to_bytes(8, "little")
             case ["ZEROP"]:
                 opcode = 0xEEEE000
             case ["INTEGERP"]:

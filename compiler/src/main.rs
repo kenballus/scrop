@@ -12,6 +12,7 @@ enum Expression<'a> {
     Symbol(&'a [u8]),
     Null,
     Form(Vec<Expression<'a>>),
+    String(Vec<u8>),
 }
 
 fn is_delimiter(v: u8) -> bool {
@@ -49,6 +50,41 @@ fn is_symbol_start_char(v: u8) -> bool {
 
 fn is_symbol_char(v: u8) -> bool {
     is_symbol_start_char(v) || v == b'#'
+}
+
+fn consume_string(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
+    if let Some(mut input) = consume_bytes(input, b"\"") {
+        let mut result = Vec::new();
+        loop {
+            if let Some(new_input) = consume_bytes(input, b"\\\\") {
+                result.push(b'\\');
+                input = new_input;
+            } else if let Some(new_input) = consume_bytes(input, b"\\n") {
+                result.push(b'\n');
+                input = new_input;
+            } else if let Some(new_input) = consume_bytes(input, b"\\t") {
+                result.push(b'\t');
+                input = new_input;
+            } else if let Some(new_input) = consume_bytes(input, b"\\\"") {
+                result.push(b'"');
+                input = new_input;
+            } else if let Some(new_input) = consume_bytes(input, b"\\") {
+                result.push(b'\n');
+                input = new_input;
+            } else if let Some(new_input) = consume_bytes(input, b"\"") {
+                input = new_input;
+                break;
+            } else if input.starts_with(b"\\") {
+                panic!("Unrecognized escape sequence in string literal!");
+            } else {
+                result.push(input[0]);
+                input = &input[1..]
+            }
+        }
+        Some((result, input))
+    } else {
+        None
+    }
 }
 
 fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
@@ -224,6 +260,8 @@ fn consume_expression(input: &[u8]) -> Option<(Expression<'_>, &[u8])> {
         Some((Expression::Symbol(sym), input))
     } else if let Some((args, input)) = consume_form(input) {
         Some((Expression::Form(args), input))
+    } else if let Some((v, input)) = consume_string(input) {
+        Some((Expression::String(v), input))
     } else {
         None
     }
@@ -390,6 +428,7 @@ fn lower_form<'a>(
             b"<" => lower_variadic_primitive(0, "LT", args, env, stack_slots_used),
             b"=" => lower_variadic_primitive(0, "EQ", args, env, stack_slots_used),
             b"eq?" => lower_variadic_primitive(0, "EQP", args, env, stack_slots_used),
+            b"string" => lower_variadic_primitive(0, "STRING", args, env, stack_slots_used),
             b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
             b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
             b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),
@@ -421,6 +460,13 @@ fn lower_expression<'a>(
                 )
             }
         }
+        Expression::String(v) => lower_variadic_primitive(
+            0,
+            "STRING",
+            v.into_iter().map(|c| Expression::Char(c)).collect(),
+            env,
+            stack_slots_used,
+        ),
     }
 }
 

@@ -18,7 +18,7 @@ bool is_valid_opcode(uint64_t const opcode) {
         0x0a55000, 0x1700000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
         0xca7000,  0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000,
         0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc0c0000,
-        0xcd00000, 0xca00000};
+        0xcd00000, 0xca00000, 0x571f000};
     for (size_t i = 0; i < _Countof(OPCODES); i++) {
         if (opcode == OPCODES[i]) {
             return true;
@@ -92,13 +92,20 @@ void print_value(uint64_t const v) {
     } else if (v == TAGGED_NULL) {
         printf("'()");
     } else if ((v & PAIR_MASK) == PAIR_SUFFIX) {
-        uint64_t car = *(uint64_t *)(v & -2);
-        uint64_t cdr = *(uint64_t *)((v & -2) + 8);
+        uint64_t car = *(uint64_t *)(v - 1);
+        uint64_t cdr = *(uint64_t *)((v - 1) + 8);
         printf("(");
         print_value(car);
         printf(" . ");
         print_value(cdr);
         printf(")");
+    } else if ((v & STRING_MASK) == STRING_SUFFIX) {
+        uint64_t const len = *(uint64_t *)(v - 3);
+        printf("\"");
+        for (uint64_t i = 0; i < len; i++) {
+            printf("%c", ((char *)(v + 5))[i]);
+        }
+        printf("\"");
     } else if (v != UNSPECIFIED) {
         printf("value is malformed: %" PRIu64 "\n", v);
         exit(EXIT_FAILURE);
