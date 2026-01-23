@@ -34,7 +34,7 @@
 #define POP(X) \
     xchg rsp, rbp ; \
     pushf ; \
-    cmp r12, 0 ; \
+    test r12, r12 ; \
     je stack_underflow ; \
     mov X, qword ptr [rbx] ; \
     sub rbx, 8 ; \
@@ -52,6 +52,13 @@
     test R64, R64 ; \
     POP(R64) ; \
     je LABEL
+
+#define JMP_IF_NOT_INT(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, INT_MASK ; \
+    test R64, R64 ; \
+    POP(R64) ; \
+    jne LABEL
 
 #define JMP_IF_BOOL(R64, LABEL) \
     cmp R64, TRUE ; \
@@ -80,6 +87,9 @@
 
 #define TAG_INT(R64) \
     shl R64, 2
+
+#define TAG_CONST_INT(V) \
+    V << 2
 
 #define UNTAG_INT(R64) \
     shr R64, 2
@@ -129,143 +139,227 @@ interpret:
 add1:
     add rsp, 8 // Skip immediate
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1:
+    JMP_IF_NOT_INT(rax, 1f)
     UNTAG_INT(rax)
     inc rax
     TAG_INT(rax)
     PUSH(rax)
     ret
+1:
+    ud2
 
 .section .text.sub1
 .global sub1
 sub1:
     add rsp, 8 // Skip immediate
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1:
+    JMP_IF_NOT_INT(rax, 1f)
     UNTAG_INT(rax)
     dec rax
     TAG_INT(rax)
     PUSH(rax)
     ret
+1:
+    ud2
 
 .section .text.add
 .global add
 add:
-    add rsp, 8 // Skip immediate
+    pop rdi // arity
+    test rdi, rdi
+    jne 1f
+    PUSH(TAG_CONST_INT(0))
+    ret
+1:
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1:
-    POP(rcx)
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1:
+    JMP_IF_NOT_INT(rax, 3f)
     UNTAG_INT(rax)
-    UNTAG_INT(rcx)
-    add rax, rcx
+2:
+    // base case
+    cmp rdi, 1
+    jne 1f
     TAG_INT(rax)
     PUSH(rax)
     ret
+1:
+    POP(rcx)
+    JMP_IF_NOT_INT(rcx, 3f)
+    UNTAG_INT(rcx)
+    add rax, rcx
+    dec rdi
+    jmp 2b
+3:
+    ud2
 
 .section .text.sub
 .global sub
 sub:
-    add rsp, 8 // Skip immediate
+    pop rdi // arity
+    test rdi, rdi
+    jne 1f
+    ud2 // can't have (-)
+1:
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
+    JMP_IF_NOT_INT(rax, 2f)
+    UNTAG_INT(rax)
+1:
+    cmp rdi, 1
+    jne 1f
+    // unary special case
+    neg rax
+    TAG_INT(rax)
+    PUSH(rax)
+    ret
 1:
     POP(rcx)
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1:
-    UNTAG_INT(rax)
+    JMP_IF_NOT_INT(rcx, 2f)
     UNTAG_INT(rcx)
-    sub rcx, rax
-    TAG_INT(rcx)
-    PUSH(rcx)
+    sub rax, rcx
+    dec rdi
+    cmp rdi, 1
+    jne 1b
+    TAG_INT(rax)
+    PUSH(rax)
     ret
+2:
+    ud2
 
 .section .text.mul
 .global mul
 mul:
-    add rsp, 8 // Skip immediate
+    pop rdi // arity
+    test rdi, rdi
+    jne 1f
+    PUSH(TAG_CONST_INT(1))
+    ret
+1:
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1: // int
-    POP(rcx)
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1: // int
+    JMP_IF_NOT_INT(rax, 3f)
     UNTAG_INT(rax)
-    UNTAG_INT(rcx)
-    mul rcx
+2:
+    // base case
+    cmp rdi, 1
+    jne 1f
     TAG_INT(rax)
     PUSH(rax)
     ret
+1:
+    POP(rcx)
+    JMP_IF_NOT_INT(rcx, 3f)
+    UNTAG_INT(rcx)
+    mul rcx
+    dec rdi
+    jmp 2b
+3:
+    ud2
+
 
 .section .text.lt
 .global lt
 lt:
-    add rsp, 8 // Skip immediate
-    POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1: // int
-    POP(rcx)
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1: // int
-    UNTAG_INT(rax)
-    UNTAG_INT(rcx)
-    cmp rcx, rax
-    mov eax, 0 // cannot be xor because of flags
-    setl al
-    TAG_BOOL(rax)
-    PUSH(rax)
+    pop rdi // arity
+    mov esi, 1 // result
+    test rdi, rdi
+    jne 1f
+    // 0 args
+    PUSH(TRUE)
     ret
+1:
+    POP(rax)
+    JMP_IF_NOT_INT(rax, 2f)
+    UNTAG_INT(rax)
+    dec rdi
+    test rdi, rdi
+    jne 1f
+    // 1 arg
+    PUSH(TRUE)
+    ret
+1:
+    POP(rcx)
+    JMP_IF_NOT_INT(rcx, 2f)
+    UNTAG_INT(rcx)
+    cmp rax, rcx
+    setl al
+    and sil, al
+    mov rax, rcx
+    dec rdi
+    test rdi, rdi
+    jne 1b
+    TAG_BOOL(rsi)
+    PUSH(rsi)
+    ret
+2:
+    ud2
 
 .section .text.eq
 .global eq 
 eq:
-    add rsp, 8 // Skip immediate
+    pop rdi // arity
+    mov esi, 1 // result
+    test rdi, rdi
+    jne 1f
+    // 0 args
+    PUSH(TRUE)
+    ret
+1:
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1: // int
-    POP(rcx)
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1: // int
+    JMP_IF_NOT_INT(rax, 2f)
     UNTAG_INT(rax)
+    dec rdi
+    test rdi, rdi
+    jne 1f
+    // 1 arg
+    PUSH(TRUE)
+    ret
+1:
+    POP(rcx)
+    JMP_IF_NOT_INT(rcx, 2f)
     UNTAG_INT(rcx)
     cmp rax, rcx
-    mov eax, 0 // cannot be xor because of flags
     sete al
-    TAG_BOOL(rax)
-    PUSH(rax)
+    and sil, al
+    mov rax, rcx
+    dec rdi
+    test rdi, rdi
+    jne 1b
+    TAG_BOOL(rsi)
+    PUSH(rsi)
     ret
+2:
+    ud2
 
 .section .text.eqp
 .global eqp
 eqp:
-    add rsp, 8 // Skip immediate
-    POP(rax)
-    POP(rcx)
-    cmp rax, rcx
-    je 1f
-    mov rax, FALSE
-    PUSH(rax)
+    pop rdi // arity
+    mov esi, 1 // result
+    test rdi, rdi
+    jne 1f
+    // 0 args
+    PUSH(TRUE)
     ret
 1:
-    mov rax, TRUE
-    PUSH(rax)
+    POP(rax)
+    dec rdi
+    test rdi, rdi
+    jne 1f
+    // 1 arg
+    PUSH(TRUE)
     ret
+1:
+    POP(rcx)
+    cmp rax, rcx
+    sete al
+    and sil, al
+    mov rax, rcx
+    dec rdi
+    test rdi, rdi
+    jne 1b
+    TAG_BOOL(rsi)
+    PUSH(rsi)
+    ret
+2:
+    ud2
 
 .section .text.load
 .global load
@@ -417,10 +511,16 @@ get:
 .section .text.fall
 .global fall
 fall:
-    add rsp, 8 // Skip immediate
+    pop rdi // amount to fall
+1:
+    test rdi, rdi
+    je 1f
     POP(rax)
-    POP(rcx)
+    POP(rcx) // we use POP for the bounds check. Otherwise could be sub
     PUSH(rax)
+    dec rdi
+    jmp 1b
+1:
     ret
 
 .section .text.forget
@@ -436,22 +536,6 @@ jump:
     pop rax
     shl rax, 4
     lea rsp, [rsp + rax]
-    ret
-
-.section .text.and
-.global and
-and:
-    add rsp, 8 // Skip immedate
-    POP(rax)
-    POP(rcx)
-    cmp rax, FALSE
-    je 1f
-    cmp rcx, FALSE
-    je 1f
-    PUSH(TRUE)
-    ret
-1:
-    PUSH(FALSE)
     ret
 
 .section .text.cons
@@ -501,7 +585,11 @@ done:
     jne 1f
     PUSH(UNSPECIFIED)
 1:
+    cmp r12, 1
+    jne 1f
     mov rdi, qword ptr [rbx]  // Grab what's on top of the stack
     mov rsp, rbp              // Put the stack back :)
     and rsp, -16              // Align the stack for a real function call
     call print_value_and_exit // Call back into C
+1:
+    ud2 // more than one thing left on the stack

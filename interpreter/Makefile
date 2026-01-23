@@ -3,7 +3,7 @@
 all: interpreter
 
 CC := clang
-CFLAGS := -O0 -std=c23
+CFLAGS := -O0 -std=c23 -Wall -Wextra -Wpedantic -Wvla -Wshadow -Wno-c2y-extensions
 LDFLAGS := -T layout.ld
 
 interpreter: interpreter.c interpreter.S

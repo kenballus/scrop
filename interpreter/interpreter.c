@@ -15,10 +15,10 @@
 bool is_valid_opcode(uint64_t const opcode) {
     static uint64_t const OPCODES[] = {
         0xadd1000, 0x50b1000, 0xd0d0000, 0x10ad000, 0x0add000, 0x050b000,
-        0x0a55000, 0x1001000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
+        0x0a55000, 0x1700000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
         0xca7000,  0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000,
-        0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc001000,
-        0xc0c0000, 0xcd00000, 0xca00000};
+        0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc0c0000,
+        0xcd00000, 0xca00000};
     for (size_t i = 0; i < _Countof(OPCODES); i++) {
         if (opcode == OPCODES[i]) {
             return true;
@@ -29,7 +29,7 @@ bool is_valid_opcode(uint64_t const opcode) {
 
 void validate_bytecode(uint64_t const *const bytecode,
                        size_t const bytecode_size) {
-    if (bytecode_size < 0 || bytecode_size % 16) {
+    if (bytecode_size % 16) {
         fprintf(stderr, "Invalid bytecode size %jd\n", (intmax_t)bytecode_size);
         exit(EXIT_FAILURE);
     }
@@ -78,7 +78,11 @@ int main(void) {
 
 void print_value(uint64_t const v) {
     if ((v & INT_MASK) == INT_SUFFIX) {
-        printf("%" PRIu64, v >> 2);
+        int64_t untagged_v = v >> 2;
+        if (untagged_v >= 0x2000000000000000ll) {
+            untagged_v = 0x4000000000000000ll - untagged_v;
+        }
+        printf("%" PRIi64, untagged_v);
     } else if (v == TRUE) {
         printf("#t");
     } else if (v == FALSE) {

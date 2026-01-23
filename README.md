@@ -1,6 +1,7 @@
 # scrop
 
-(this works only on x86\_64 linux)
+this is only tested on x86\_64 linux with clang 21.1.6.
+almost certainly doesn't work with anything else.
 
 ## what's where
 
@@ -18,7 +19,8 @@ python.
 
 ### interpreter
 interpreter for the bytecode.
-basically just a rop executor.
+bytecode opcodes are the addresses of their implementations in the interpreter.
+in other words, the bytecode programs are ropchains for the interpreter.
 
 x86\_64 asm and a little bit of c.
 

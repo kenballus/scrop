@@ -4,7 +4,7 @@ use std::{
     str::from_utf8,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum Expression<'a> {
     Int(u64),
     Bool(bool),
@@ -273,9 +273,7 @@ fn lower_let<'a>(
         let new_env = &mut env.clone();
         new_env.extend(new_bindings.drain());
         result.append(&mut lower_expressions(args, new_env, stack_slots_used));
-        for _ in 0..num_bindings {
-            result.push("FALL".to_owned());
-        }
+        result.push(format!("FALL {num_bindings}"))
     } else {
         panic!("let bindings is not a form")
     }
@@ -299,7 +297,7 @@ fn lower_if<'a>(
     stack_slots_used += 1; // cond
     result.push("LOAD #f".to_owned());
     stack_slots_used += 1; // load
-    result.push("EQP".to_owned());
+    result.push("EQP 2".to_owned());
     stack_slots_used -= 1; // eqp
 
     // consequent
@@ -339,83 +337,23 @@ fn lower_nary_primitive<'a>(
     result
 }
 
-fn lower_variadic_all_pairs_primitive<'a>(
-    implementation_arity: usize,
+fn lower_variadic_primitive<'a>(
+    min_args: usize,
     mnemonic: &str,
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     stack_slots_used: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
-    let mut stack_slots_used = stack_slots_used;
-    if args.len() < implementation_arity {
-        for arg in args {
-            result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
-            result.push("FORGET".to_owned());
-        }
-        result.append(&mut lower_expression(
-            Expression::Bool(true),
-            &env.clone(),
-            stack_slots_used,
-        ));
-    } else {
-        let num_args: usize = args.len();
-        for arg in args {
-            result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
-            stack_slots_used += 1;
-        }
-        // From this point forward, stack_slots_used is not updated, even though
-        // the stack is used. This is because we don't call lower_expression again
-        // in this match arm, so it would be a dead store.
-        for (i, j) in (0..num_args).zip(1..num_args) {
-            result.append(&mut vec![
-                "GET ".to_owned() + &i.to_string(),
-                "GET ".to_owned() + &j.to_string(),
-                mnemonic.to_owned(),
-            ]);
-            if i != 0 {
-                result.push("AND".to_owned());
-            }
-        }
-        for _ in 0..num_args {
-            result.push("FALL".to_owned());
-        }
-    }
-    result
-}
-
-fn lower_variadic_fold_primitive<'a>(
-    implementation_arity: usize,
-    min_args: usize,
-    default_argument: Expression<'a>,
-    mnemonic: &str,
-    mut args: Vec<Expression<'a>>,
-    env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
-) -> Vec<String> {
-    let mut result = Vec::new();
+    let num_args = args.len();
     assert!(
-        args.len() >= min_args,
-        "Too few arguments provided to variadic fold primitive"
+        num_args >= min_args,
+        "Too few arguments provided to variadic primitive"
     );
-    while args.len() < implementation_arity {
-        args.insert(0, default_argument.clone());
+    for (i, arg) in args.into_iter().rev().enumerate() {
+        result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used + i));
     }
-    let mut stack_slots_used = stack_slots_used;
-    for (i, arg) in args.into_iter().enumerate() {
-        result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
-        stack_slots_used += 1; // arg
-        if (i == implementation_arity - 1)
-            || (i >= implementation_arity && ((i % (implementation_arity - 1)) == 0))
-        {
-            result.push(mnemonic.to_owned());
-            // Note: this cannot be rewritten as
-            // `stack_slots_used -= 1 - implementation_arity`
-            // because that will promote 1 to usize, and then underflow.
-            stack_slots_used -= implementation_arity; // implementation args
-            stack_slots_used += 1; //                    implementation result
-        }
-    }
+    result.push(format!("{mnemonic} {num_args}"));
     result
 }
 
@@ -442,12 +380,12 @@ fn lower_form<'a>(
             b"not" => lower_nary_primitive("NOT", 1, args, env, stack_slots_used),
             b"char->integer" => lower_nary_primitive("CHARTOINT", 1, args, env, stack_slots_used),
             b"integer->char" => lower_nary_primitive("INTTOCHAR", 1, args, env, stack_slots_used),
-            b"+" => lower_variadic_fold_primitive(2, 0, Expression::Int(0), "ADD", args, env, stack_slots_used),
-            b"-" => lower_variadic_fold_primitive(2, 1, Expression::Int(0), "SUB", args, env, stack_slots_used),
-            b"*" => lower_variadic_fold_primitive(2, 0, Expression::Int(1), "MUL", args, env, stack_slots_used),
-            b"<" => lower_variadic_all_pairs_primitive(2, "LT", args, env, stack_slots_used),
-            b"=" => lower_variadic_all_pairs_primitive(2, "EQ", args, env, stack_slots_used),
-            b"eq?" => lower_variadic_all_pairs_primitive(2, "EQP", args, env, stack_slots_used),
+            b"+" => lower_variadic_primitive(0, "ADD", args, env, stack_slots_used),
+            b"-" => lower_variadic_primitive(1, "SUB", args, env, stack_slots_used),
+            b"*" => lower_variadic_primitive(0, "MUL", args, env, stack_slots_used),
+            b"<" => lower_variadic_primitive(0, "LT", args, env, stack_slots_used),
+            b"=" => lower_variadic_primitive(0, "EQ", args, env, stack_slots_used),
+            b"eq?" => lower_variadic_primitive(0, "EQP", args, env, stack_slots_used),
             b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
             b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
             b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),
@@ -465,7 +403,7 @@ fn lower_expression<'a>(
 ) -> Vec<String> {
     match exp {
         Expression::Int(x) => vec!["LOAD ".to_owned() + &x.to_string()],
-        Expression::Char(x) => vec!["LOAD #\\".to_owned() + format!("x{x:x}").as_str()],
+        Expression::Char(x) => vec![format!("LOAD #\\x{x:x}")],
         Expression::Bool(x) => vec!["LOAD ".to_owned() + if x { "#t" } else { "#f" }],
         Expression::Form(args) => lower_form(args, env, stack_slots_used),
         Expression::Null => vec!["LOAD NULL".to_owned()],
@@ -575,7 +513,7 @@ fn too_many_unary_args() {
 }
 
 #[test]
-#[should_panic(expected = "Too few arguments provided to variadic fold primitive")]
+#[should_panic(expected = "Too few arguments provided to variadic primitive")]
 fn too_few_variadic_args() {
     compile_all(b"(-)");
 }
