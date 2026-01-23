@@ -15,7 +15,8 @@
 // - 00001111 => char
 // -  0011111 => bool
 // - 00101111 => '()
-// - all 1s   => #<unspecified>
+// -   all 1s => #<unspecified>
+// -      001 => pair
 
 // Needs to preserve flags
 #define PUSH(X) \
