@@ -97,6 +97,22 @@ static void print_i64_or_die(int64_t v) {
     write_or_die(STDOUT_FILENO, result, bytes_written);
 }
 
+static void print_value(uint64_t); // forward declaration :(
+static void print_pair_contents(uint64_t const v) {
+    uint64_t const car = *(uint64_t *)(v - 1);
+    uint64_t const cdr = *(uint64_t *)((v - 1) + 8);
+    print_value(car);
+    if (cdr != TAGGED_NULL) {
+        if ((cdr & PAIR_MASK) == PAIR_SUFFIX) {
+            PRINT_STRING_LITERAL(" ");
+            print_pair_contents(cdr);
+        } else {
+            PRINT_STRING_LITERAL(" . ");
+            print_value(cdr);
+        }
+    }
+}
+
 static void print_value(uint64_t const v) {
     if ((v & INT_MASK) == INT_SUFFIX) {
         int64_t untagged_v = v >> 2;
@@ -112,14 +128,10 @@ static void print_value(uint64_t const v) {
         PRINT_STRING_LITERAL("#\\");
         print_char_or_die((char)(v >> 8));
     } else if (v == TAGGED_NULL) {
-        PRINT_STRING_LITERAL("'()");
+        PRINT_STRING_LITERAL("()");
     } else if ((v & PAIR_MASK) == PAIR_SUFFIX) {
-        uint64_t const car = *(uint64_t *)(v - 1);
-        uint64_t const cdr = *(uint64_t *)((v - 1) + 8);
         PRINT_STRING_LITERAL("(");
-        print_value(car);
-        PRINT_STRING_LITERAL(" . ");
-        print_value(cdr);
+        print_pair_contents(v);
         PRINT_STRING_LITERAL(")");
     } else if ((v & STRING_MASK) == STRING_SUFFIX) {
         uint64_t const len = *(uint64_t *)(v - 3);

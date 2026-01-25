@@ -13,7 +13,6 @@ enum Expression<'a> {
     Null,
     Form(Vec<Expression<'a>>),
     String(Vec<u8>),
-    Vector(Vec<Expression<'a>>),
 }
 
 fn is_delimiter(v: u8) -> bool {
@@ -53,7 +52,7 @@ fn is_symbol_char(v: u8) -> bool {
     is_symbol_start_char(v) || v == b'#'
 }
 
-fn consume_string(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
+fn consume_string_literal(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
     if let Some(mut input) = consume_bytes(input, b"\"") {
         let mut result = Vec::new();
         loop {
@@ -83,23 +82,6 @@ fn consume_string(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
             }
         }
         Some((result, input))
-    } else {
-        None
-    }
-}
-
-fn consume_vector(input: &[u8]) -> Option<(Vec<Expression<'_>>, &[u8])> {
-    if let Some(mut input) = consume_bytes(input, b"#(") {
-        let mut result = Vec::new();
-        while let Some((item, new_input)) = consume_expression(consume_whitespace(input)) {
-            result.push(item);
-            input = new_input;
-        }
-        if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
-            Some((result, input))
-        } else {
-            None
-        }
     } else {
         None
     }
@@ -272,16 +254,12 @@ fn consume_expression(input: &[u8]) -> Option<(Expression<'_>, &[u8])> {
         Some((Expression::Bool(v), input))
     } else if let Some((v, input)) = consume_character(input) {
         Some((Expression::Char(v), input))
-    } else if let Some(input) = consume_null(input) {
-        Some((Expression::Null, input))
     } else if let Some((sym, input)) = consume_symbol(input) {
         Some((Expression::Symbol(sym), input))
     } else if let Some((args, input)) = consume_form(input) {
         Some((Expression::Form(args), input))
-    } else if let Some((v, input)) = consume_string(input) {
+    } else if let Some((v, input)) = consume_string_literal(input) {
         Some((Expression::String(v), input))
-    } else if let Some((v, input)) = consume_vector(input) {
-        Some((Expression::Vector(v), input))
     } else {
         None
     }
@@ -318,7 +296,7 @@ fn lower_let<'a>(
                 if let (Expression::Symbol(name), exp) = (binding.remove(0), binding.remove(0)) {
                     let insert_rc = new_bindings.insert(name, stack_slots_used);
                     assert!(insert_rc.is_none(), "Duplicate key in let binding");
-                    result.append(&mut lower_expression(exp, &env.clone(), stack_slots_used));
+                    result.append(&mut lower_expression(exp, env, stack_slots_used));
                     stack_slots_used += 1;
                 } else {
                     panic!("let binding args are not (Symbol, Expr)")
@@ -360,11 +338,7 @@ fn lower_if<'a>(
     let mut stack_slots_used = stack_slots_used;
     assert!(matches!(args.len(), 2 | 3), "Invalid argument count to if");
     // cond
-    result.append(&mut lower_expression(
-        args.remove(0),
-        &env.clone(),
-        stack_slots_used,
-    ));
+    result.append(&mut lower_expression(args.remove(0), env, stack_slots_used));
     stack_slots_used += 1; // cond
     result.push("LOAD #f".to_owned());
     stack_slots_used += 1; // load
@@ -372,11 +346,11 @@ fn lower_if<'a>(
     stack_slots_used -= 1; // eqp
 
     // consequent
-    let mut consequent_code = lower_expression(args.remove(0), &env.clone(), stack_slots_used);
+    let mut consequent_code = lower_expression(args.remove(0), env, stack_slots_used);
 
     // alternative
     let mut alternative_code = if let Some(alternative_code) = args.pop() {
-        lower_expression(alternative_code, &env.clone(), stack_slots_used)
+        lower_expression(alternative_code, env, stack_slots_used)
     } else {
         vec!["LOAD UNSPECIFIED".to_owned()]
     };
@@ -386,6 +360,29 @@ fn lower_if<'a>(
     result.push("CJUMP ".to_owned() + &consequent_code.len().to_string());
     result.append(&mut consequent_code);
     result.append(&mut alternative_code);
+    result
+}
+
+fn lower_list<'a>(
+    args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    mut stack_slots_used: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    stack_slots_used += 1;
+    let num_args = args.len();
+    for arg in args {
+        result.append(&mut lower_expression(
+            arg,
+            env,
+            stack_slots_used,
+        ));
+        stack_slots_used += 1;
+    }
+    result.push("LOAD NULL".to_owned());
+    for _ in 0..num_args {
+        result.push("CONS".to_owned());
+    }
     result
 }
 
@@ -402,7 +399,7 @@ fn lower_nary_primitive<'a>(
         "incorrect argument count for {n}-ary primitive"
     );
     for arg in args {
-        result.append(&mut lower_expression(arg, &env.clone(), stack_slots_used));
+        result.append(&mut lower_expression(arg, env, stack_slots_used));
     }
     result.push(mnemonic.to_owned());
     result
@@ -422,11 +419,7 @@ fn lower_variadic_primitive<'a>(
         "Too few arguments provided to variadic primitive"
     );
     for (i, arg) in args.into_iter().rev().enumerate() {
-        result.append(&mut lower_expression(
-            arg,
-            &env.clone(),
-            stack_slots_used + i,
-        ));
+        result.append(&mut lower_expression(arg, env, stack_slots_used + i));
     }
     result.push(format!("{mnemonic} {num_args}"));
     result
@@ -477,6 +470,7 @@ fn lower_form<'a>(
             b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
             b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
             b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),
+            b"list" => lower_list(args, env, stack_slots_used),
             _ => panic!("Cannot resolve symbol '{name:?}'"),
         }
     } else {
@@ -512,7 +506,6 @@ fn lower_expression<'a>(
             env,
             stack_slots_used,
         ),
-        Expression::Vector(v) => lower_variadic_primitive(0, "VECTOR", v, env, stack_slots_used),
     }
 }
 
@@ -524,7 +517,7 @@ fn lower_expressions<'a>(
     let mut result = Vec::new();
     let num_exps = exps.len();
     for (i, exp) in exps.into_iter().enumerate() {
-        result.append(&mut lower_expression(exp, &env.clone(), stack_slots_used));
+        result.append(&mut lower_expression(exp, env, stack_slots_used));
         if i != num_exps - 1 {
             result.push("FORGET".to_owned());
         }
