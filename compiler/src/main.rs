@@ -512,13 +512,7 @@ fn lower_expression<'a>(
             env,
             stack_slots_used,
         ),
-        Expression::Vector(v) => lower_variadic_primitive(
-            0,
-            "VECTOR",
-            v,
-            env,
-            stack_slots_used
-        )
+        Expression::Vector(v) => lower_variadic_primitive(0, "VECTOR", v, env, stack_slots_used),
     }
 }
 

@@ -1,11 +1,11 @@
 #define _GNU_SOURCE
 
 #include "constants.h"
-#include "libc.h"
 #include "interpreter.h"
+#include "libc.h"
 
 static void *mmap_or_die(void *addr, size_t len, int prot, int flags, int fd,
-                  off_t off) {
+                         off_t off) {
     void *result = mmap(addr, len, prot, flags, fd, off);
     if (result <= NULL) {
         exit(EXIT_FAILURE);
@@ -15,8 +15,9 @@ static void *mmap_or_die(void *addr, size_t len, int prot, int flags, int fd,
 
 void _start(void) {
     size_t capacity = PAGESIZE;
-    unsigned char *bytecode = mmap_or_die(NULL, capacity, PROT_READ | PROT_WRITE,
-                                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    unsigned char *bytecode =
+        mmap_or_die(NULL, capacity, PROT_READ | PROT_WRITE,
+                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     size_t bytes_read = 0;
     while (true) {
         ssize_t const read_rc =
@@ -46,7 +47,8 @@ void _start(void) {
     interpret(bytecode, stack + PAGESIZE);
 }
 
-static void write_or_die(int const fd, void const *const buf, size_t const len) {
+static void write_or_die(int const fd, void const *const buf,
+                         size_t const len) {
     ssize_t const write_rc = write(fd, buf, len);
     if (write_rc < 0 || (write_rc == 0 && len > 0)) {
         exit(EXIT_FAILURE);
@@ -80,13 +82,15 @@ static void print_i64_or_die(int64_t v) {
         v *= -1;
     }
     uint64_t const uv = v;
-    uint64_t power_of_ten = 10000000000000000000ull; // (smallest power of ten greater than INT64_MAX)
+    uint64_t power_of_ten = 10000000000000000000ull; // (smallest power of ten
+                                                     // greater than INT64_MAX)
     while (power_of_ten > uv) {
         power_of_ten /= 10;
     }
     power_of_ten *= 10;
     while (power_of_ten > 1) {
-        result[bytes_written] = '0' + ((uv % power_of_ten) / (power_of_ten / 10));
+        result[bytes_written] =
+            '0' + ((uv % power_of_ten) / (power_of_ten / 10));
         power_of_ten /= 10;
         bytes_written++;
     }
