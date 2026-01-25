@@ -42,6 +42,18 @@
     popf ; \
     xchg rsp, rbp
 
+// Needs to preserve flags
+#define PEEK(X, I) \
+    xchg rsp, rbp ; \
+    pushf ; \
+    cmp r12, I ; \
+    jbe stack_underflow ; \
+    neg I ; \
+    mov X, qword ptr [rbx + I * 8] ; \
+    neg I ; \
+    popf ; \
+    xchg rsp, rbp
+
 #define JMP_IF_NULL(R64, LABEL) \
     cmp R64, TAGGED_NULL ; \
     je LABEL
@@ -91,6 +103,14 @@
     cmp R64, STRING_SUFFIX ; \
     POP(R64) ; \
     je LABEL
+
+#define JMP_IF_NOT_STRING(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, STRING_MASK ; \
+    cmp R64, STRING_SUFFIX ; \
+    POP(R64) ; \
+    jne LABEL
+
 
 #define TAG_INT(R64) \
     shl R64, 2
@@ -628,9 +648,7 @@ stringref:
 1:
     UNTAG_INT(rcx)
     POP(rax) // string
-    JMP_IF_STRING(rax, 1f)
-    ud2
-1:
+    JMP_IF_NOT_STRING(rax, 1f)
     UNTAG_STRING(rax)
     mov rdi, qword ptr [rax]
     cmp rcx, rax
@@ -658,13 +676,11 @@ stringset:
 1:
     UNTAG_INT(rcx)
     POP(rax) // string
-    JMP_IF_STRING(rax, 1f)
-    ud2
-1:
+    JMP_IF_NOT_STRING(rax, 1f)
     UNTAG_STRING(rax)
     mov rdi, qword ptr [rax]
     cmp rcx, rax
-    jae 1f
+    jae 1f // index out of bounds
     mov byte ptr [rax + rcx + 8], sil
     and rax, 0xff
     TAG_CHAR(rax)
@@ -676,6 +692,53 @@ stringset:
 .section .text.stringappend
 .global stringappend
 stringappend:
+    pop rdx // arity
+    test rdx, rdx
+    jne 1f
+    // no args
+    sub rbp, 8
+    mov qword ptr [rbp], 0
+    mov rax, rbp
+    TAG_STRING(rax)
+    PUSH(rax)
+    ret
+1:
+    // at least one arg
+    xor ecx, ecx // counter
+    xor eax, eax // length
+1:
+    cmp rcx, rdx
+    je 1f
+    PEEK(rsi, rcx) // args[rcx]
+    JMP_IF_NOT_STRING(rsi, 2f)
+    UNTAG_STRING(rsi)
+    add rax, qword ptr [rsi]
+    inc rcx
+    jmp 1b
+1:
+    // alloc(sum_of_strlens + 8)
+    sub rbp, rax
+    and rbp, -8
+    sub rbp, 8
+    mov qword ptr [rbp], rax // result length
+    lea rdi, [rbp + 8] // result buffer
+1:
+    test rdx, rdx
+    je 1f
+    POP(rsi) // arg
+    JMP_IF_NOT_STRING(rsi, 2f)
+    UNTAG_STRING(rsi)
+    mov rcx, qword ptr [rsi] // count
+    add rsi, 8
+    rep movsb
+    dec rdx
+    jmp 1b
+1:
+    mov rax, rbp
+    TAG_STRING(rax)
+    PUSH(rax)
+    ret
+2:
     ud2
 
 .section .text.done
