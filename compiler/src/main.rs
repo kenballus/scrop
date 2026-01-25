@@ -13,6 +13,7 @@ enum Expression<'a> {
     Null,
     Form(Vec<Expression<'a>>),
     String(Vec<u8>),
+    Vector(Vec<Expression<'a>>),
 }
 
 fn is_delimiter(v: u8) -> bool {
@@ -82,6 +83,23 @@ fn consume_string(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
             }
         }
         Some((result, input))
+    } else {
+        None
+    }
+}
+
+fn consume_vector(input: &[u8]) -> Option<(Vec<Expression<'_>>, &[u8])> {
+    if let Some(mut input) = consume_bytes(input, b"#(") {
+        let mut result = Vec::new();
+        while let Some((item, new_input)) = consume_expression(consume_whitespace(input)) {
+            result.push(item);
+            input = new_input;
+        }
+        if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
+            Some((result, input))
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -262,6 +280,8 @@ fn consume_expression(input: &[u8]) -> Option<(Expression<'_>, &[u8])> {
         Some((Expression::Form(args), input))
     } else if let Some((v, input)) = consume_string(input) {
         Some((Expression::String(v), input))
+    } else if let Some((v, input)) = consume_vector(input) {
+        Some((Expression::Vector(v), input))
     } else {
         None
     }
@@ -492,6 +512,13 @@ fn lower_expression<'a>(
             env,
             stack_slots_used,
         ),
+        Expression::Vector(v) => lower_variadic_primitive(
+            0,
+            "VECTOR",
+            v,
+            env,
+            stack_slots_used
+        )
     }
 }
 

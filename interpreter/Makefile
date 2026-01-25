@@ -4,7 +4,7 @@ all: interpreter
 
 CC := clang
 CFLAGS := -O0 -std=c23 -Wall -Wextra -Wpedantic -Wvla -Wshadow -Wno-c2y-extensions -nostdlib -fno-stack-protector
-LDFLAGS := -T layout.ld
+LDFLAGS := -T layout.ld -static
 
 interpreter-launcher.o: interpreter-launcher.c
 	$(CC) $(CFLAGS) -c $^ -o $@
