@@ -4,9 +4,9 @@
 #include "interpreter.h"
 #include "libc.h"
 
-static void *mmap_or_die(void *addr, size_t len, int prot, int flags, int fd,
-                         off_t off) {
-    void *result = mmap(addr, len, prot, flags, fd, off);
+static void *mmap_or_die(void *const addr, size_t const len, int const prot,
+                         int const flags, int const fd, off_t const off) {
+    void *const result = mmap(addr, len, prot, flags, fd, off);
     if (result <= NULL) {
         exit(EXIT_FAILURE);
     }
@@ -15,7 +15,7 @@ static void *mmap_or_die(void *addr, size_t len, int prot, int flags, int fd,
 
 void _start(void) {
     size_t capacity = PAGESIZE;
-    unsigned char *bytecode =
+    unsigned char *const bytecode =
         mmap_or_die(NULL, capacity, PROT_READ | PROT_WRITE,
                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     size_t bytes_read = 0;
@@ -41,7 +41,7 @@ void _start(void) {
         exit(EXIT_FAILURE);
     }
 
-    uint8_t *stack =
+    uint8_t *const stack =
         mmap_or_die(NULL, PAGESIZE, PROT_READ | PROT_WRITE,
                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_GROWSDOWN, -1, 0);
     interpret(bytecode, stack + PAGESIZE);
@@ -114,8 +114,8 @@ static void print_value(uint64_t const v) {
     } else if (v == TAGGED_NULL) {
         PRINT_STRING_LITERAL("'()");
     } else if ((v & PAIR_MASK) == PAIR_SUFFIX) {
-        uint64_t car = *(uint64_t *)(v - 1);
-        uint64_t cdr = *(uint64_t *)((v - 1) + 8);
+        uint64_t const car = *(uint64_t *)(v - 1);
+        uint64_t const cdr = *(uint64_t *)((v - 1) + 8);
         PRINT_STRING_LITERAL("(");
         print_value(car);
         PRINT_STRING_LITERAL(" . ");
