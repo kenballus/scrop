@@ -17,6 +17,7 @@
 // -   all 1s => #<unspecified>
 // -      001 => pair
 // -      011 => string
+// -      010 => vector
 
 // Needs to preserve flags
 #define PUSH(X) \
@@ -97,13 +98,6 @@
     POP(R64) ; \
     je LABEL
 
-#define JMP_IF_STRING(R64, LABEL) \
-    PUSH(R64) ; \
-    and R64, STRING_MASK ; \
-    cmp R64, STRING_SUFFIX ; \
-    POP(R64) ; \
-    je LABEL
-
 #define JMP_IF_NOT_STRING(R64, LABEL) \
     PUSH(R64) ; \
     and R64, STRING_MASK ; \
@@ -111,6 +105,12 @@
     POP(R64) ; \
     jne LABEL
 
+#define JMP_IF_NOT_VECTOR(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, VECTOR_MASK ; \
+    cmp R64, VECTOR_SUFFIX ; \
+    POP(R64) ; \
+    jne LABEL
 
 #define TAG_INT(R64) \
     shl R64, 2
@@ -142,9 +142,15 @@
     and R64, -2
 
 #define TAG_STRING(R64) \
-    or R64, 0b11
+    or R64, STRING_SUFFIX
 
 #define UNTAG_STRING(R64) \
+    and R64, -4
+
+#define TAG_VECTOR(R64) \
+    or R64, VECTOR_SUFFIX
+
+#define UNTAG_VECTOR(R64) \
     and R64, -4
 
 .section .text
@@ -740,6 +746,126 @@ stringappend:
     ret
 2:
     ud2
+
+.section .text.vector
+.global vector
+vector:
+    pop rdi // arity
+    // alloc(arity * 8 + 8)
+    neg rdi
+    lea rbp, [rbp + rdi * 8 - 8]
+    neg rdi
+    mov rax, rbp // result
+    mov qword ptr [rbp], rdi // write arity into the struct
+    xor esi, esi
+2:
+    test rdi, rdi
+    jne 1f
+    TAG_VECTOR(rax)
+    PUSH(rax)
+    ret
+1:
+    POP(rcx)
+    mov qword ptr [rax + rsi * 8 + 8], rcx
+    inc rsi
+    dec rdi
+    jmp 2b
+
+.section .text.vectorref
+.global vectorref
+vectorref:
+    add rsp, 8
+    POP(rcx) // index
+    JMP_IF_INT(rcx, 1f)
+    ud2
+1:
+    UNTAG_INT(rcx)
+    POP(rax) // vector
+    JMP_IF_NOT_VECTOR(rax, 1f)
+    UNTAG_VECTOR(rax)
+    mov rdi, qword ptr [rax]
+    cmp rcx, rax
+    jae 1f
+    mov rax, qword ptr [rax + rcx * 8 + 8]
+    PUSH(rax)
+    ret
+1:
+    ud2
+
+.section .text.vectorset
+.global vectorset
+vectorset:
+    add rsp, 8
+    POP(rsi) // arg
+    POP(rcx) // index
+    JMP_IF_INT(rcx, 1f)
+    ud2
+1:
+    UNTAG_INT(rcx)
+    POP(rax) // vector
+    JMP_IF_NOT_VECTOR(rax, 1f)
+    UNTAG_VECTOR(rax)
+    mov rdi, qword ptr [rax]
+    cmp rcx, rax
+    jae 1f // index out of bounds
+    mov qword ptr [rax + rcx * 8 + 8], rsi
+    PUSH(rax)
+    ret
+1:
+    ud2
+
+.section .text.vectorappend
+.global vectorappend
+vectorappend:
+    pop rdx // arity
+    test rdx, rdx
+    jne 1f
+    // no args
+    sub rbp, 8
+    mov qword ptr [rbp], 0
+    mov rax, rbp
+    TAG_VECTOR(rax)
+    PUSH(rax)
+    ret
+1:
+    // at least one arg
+    xor ecx, ecx // counter
+    xor eax, eax // length
+1:
+    cmp rcx, rdx
+    je 1f
+    PEEK(rsi, rcx) // args[rcx]
+    JMP_IF_NOT_VECTOR(rsi, 2f)
+    UNTAG_VECTOR(rsi)
+    add rax, qword ptr [rsi]
+    inc rcx
+    jmp 1b
+1:
+    // alloc(sum_of_veclens * 8 + 8)
+    neg rax
+    lea rbp, [rbp + rax * 8 - 8]
+    neg rax
+    mov qword ptr [rbp], rax // result length
+    lea rdi, [rbp + 8] // result buffer
+1:
+    test rdx, rdx
+    je 1f
+    POP(rsi) // arg
+    JMP_IF_NOT_VECTOR(rsi, 2f)
+    UNTAG_VECTOR(rsi)
+    mov rcx, qword ptr [rsi] // count
+    add rsi, 8
+    rep movsq
+    dec rdx
+    jmp 1b
+1:
+    mov rax, rbp
+    TAG_VECTOR(rax)
+    PUSH(rax)
+    ret
+2:
+    ud2
+
 
 .section .text.done
 .global done

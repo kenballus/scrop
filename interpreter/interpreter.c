@@ -18,7 +18,8 @@ bool is_valid_opcode(uint64_t const opcode) {
         0x0a55000, 0x1700000, 0xe3e3000, 0xeeee000, 0x1234000, 0xb001000,
         0xca7000,  0x70ad000, 0x4321000, 0x7777000, 0xcaca000, 0xc701000,
         0x170c000, 0x3e3e000, 0x9e7000,  0x49e7000, 0xfa11000, 0xc0c0000,
-        0xcd00000, 0xca00000, 0x571f000, 0x571e000, 0x5715000, 0x571a000};
+        0xcd00000, 0xca00000, 0x571f000, 0x571e000, 0x5715000, 0x571a000,
+        0x5ecf000, 0x5ece000, 0x5ec5000, 0x5eca000};
     for (size_t i = 0; i < _Countof(OPCODES); i++) {
         if (opcode == OPCODES[i]) {
             return true;
@@ -103,6 +104,16 @@ void print_value(uint64_t const v) {
             printf("%c", ((char *)(v + 5))[i]);
         }
         printf("\"");
+    } else if ((v & VECTOR_MASK) == VECTOR_SUFFIX) {
+        uint64_t const len = *(uint64_t *)(v - 2);
+        printf("#(");
+        for (uint64_t i = 0; i < len; i++) {
+            print_value(((uint64_t *)(v - 2 + 8))[i]);
+            if (i != len - 1) {
+                printf(" ");
+            }
+        }
+        printf(")");
     } else if (v != UNSPECIFIED) {
         printf("value is malformed: %" PRIu64 "\n", v);
         exit(EXIT_FAILURE);

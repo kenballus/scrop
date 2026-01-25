@@ -318,6 +318,19 @@ fn lower_let<'a>(
     result
 }
 
+fn lower_begin<'a>(
+    args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    stack_slots_used: usize,
+) -> Vec<String> {
+    if args.is_empty() {
+        // Technically wrong; whether begin allows 0 args is context-dependent
+        vec!["LOAD UNSPECIFIED".to_owned()]
+    } else {
+        lower_expressions(args, env, stack_slots_used)
+    }
+}
+
 fn lower_if<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
@@ -410,6 +423,7 @@ fn lower_form<'a>(
             todo!("Function calls are not yet implemented.")
         }
         match name {
+            b"begin" => lower_begin(args, env, stack_slots_used),
             b"let" => lower_let(args, env, stack_slots_used),
             b"if" => lower_if(args, env, stack_slots_used),
             b"add1" => lower_nary_primitive("ADD1", 1, args, env, stack_slots_used),
@@ -429,9 +443,17 @@ fn lower_form<'a>(
             b"=" => lower_variadic_primitive(0, "EQ", args, env, stack_slots_used),
             b"eq?" => lower_variadic_primitive(0, "EQP", args, env, stack_slots_used),
             b"string" => lower_variadic_primitive(0, "STRING", args, env, stack_slots_used),
-            b"string-append" => lower_variadic_primitive(0, "STRINGAPPEND", args, env, stack_slots_used),
+            b"string-append" => {
+                lower_variadic_primitive(0, "STRINGAPPEND", args, env, stack_slots_used)
+            }
             b"string-ref" => lower_nary_primitive("STRINGREF", 2, args, env, stack_slots_used),
             b"string-set!" => lower_nary_primitive("STRINGSET", 3, args, env, stack_slots_used),
+            b"vector" => lower_variadic_primitive(0, "VECTOR", args, env, stack_slots_used),
+            b"vector-append" => {
+                lower_variadic_primitive(0, "VECTORAPPEND", args, env, stack_slots_used)
+            }
+            b"vector-ref" => lower_nary_primitive("VECTORREF", 2, args, env, stack_slots_used),
+            b"vector-set!" => lower_nary_primitive("VECTORSET", 3, args, env, stack_slots_used),
             b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
             b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
             b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),

@@ -1,0 +1,1 @@
+(vector-append (vector "a") (vector "bcdefghijklmnopqrstuvwxy") (vector "z"))

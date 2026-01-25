@@ -108,17 +108,27 @@ def main() -> None:
             case ["EQP", v]:
                 opcode = 0x3E3E000
                 immediate = int(v).to_bytes(8, "little")
-            case ["STRING", v]:
-                opcode = 0x571f000
-                immediate = int(v).to_bytes(8, "little")
             case ["ZEROP"]:
                 opcode = 0xEEEE000
+            case ["STRING", v]:
+                opcode = 0x571F000
+                immediate = int(v).to_bytes(8, "little")
             case ["STRINGREF"]:
-                opcode = 0x571e000
+                opcode = 0x571E000
             case ["STRINGSET"]:
                 opcode = 0x5715000
             case ["STRINGAPPEND", v]:
                 opcode = 0x571A000
+                immediate = int(v).to_bytes(8, "little")
+            case ["VECTOR", v]:
+                opcode = 0x5ECF000
+                immediate = int(v).to_bytes(8, "little")
+            case ["VECTORREF"]:
+                opcode = 0x5ECE000
+            case ["VECTORSET"]:
+                opcode = 0x5EC5000
+            case ["VECTORAPPEND", v]:
+                opcode = 0x5ECA000
                 immediate = int(v).to_bytes(8, "little")
             case ["INTEGERP"]:
                 opcode = 0x1234000

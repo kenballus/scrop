@@ -152,4 +152,24 @@ SECTIONS {
     .text.stringappend : {
         *(stringappend)
     }
+
+    . = 0x5ecf000;
+    .text.vector : {
+        *(vector)
+    }
+
+    . = 0x5ece000;
+    .text.vectorref : {
+        *(vectorref)
+    }
+
+    . = 0x5ec5000;
+    .text.vectorset : {
+        *(vectorset)
+    }
+
+    . = 0x5eca000;
+    .text.vectorappend : {
+        *(vectorappend)
+    }
 }

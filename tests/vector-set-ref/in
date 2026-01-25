@@ -1,0 +1,1 @@
+(let ((v (vector #\a #\n #\g #\u #\l #\a #\r))) (vector-set! v 0 "b") v)
