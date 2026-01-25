@@ -2,10 +2,11 @@
 
 #include "constants.h"
 
-// rbx is our sp
-// rsp is our pc
-// rbp is our hp
-// r12 holds how many stack slots are currently in use.
+#define vm_pc rsp
+#define vm_sp rbx
+#define vm_hp rbp
+#define stack_slots_used r12
+
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
 // Each opcode is simply the address of its implementation.
 // (See the linker script for these addresses)
@@ -21,39 +22,31 @@
 
 // Needs to preserve flags
 #define PUSH(X) \
-    xchg rsp, rbp ; \
-    pushf ; \
-    cmp r12, NUM_STACK_SLOTS ; \
-    je stack_overflow ; \
-    add rbx, 8 ; \
-    mov qword ptr [rbx], X ; \
-    inc r12 ; \
-    popf ; \
-    xchg rsp, rbp
+    lea vm_sp, [vm_sp - STACK_SLOT_SIZE] ; \
+    mov qword ptr [vm_sp], X ; \
+    lea stack_slots_used, [stack_slots_used + 1]
 
 // Needs to preserve flags
 #define POP(X) \
-    xchg rsp, rbp ; \
+    xchg vm_pc, vm_hp ; \
     pushf ; \
-    test r12, r12 ; \
+    test stack_slots_used, stack_slots_used ; \
     je stack_underflow ; \
-    mov X, qword ptr [rbx] ; \
-    sub rbx, 8 ; \
-    dec r12 ; \
+    mov X, qword ptr [vm_sp] ; \
+    add vm_sp, STACK_SLOT_SIZE ; \
+    dec stack_slots_used ; \
     popf ; \
-    xchg rsp, rbp
+    xchg vm_pc, vm_hp
 
 // Needs to preserve flags
 #define PEEK(X, I) \
-    xchg rsp, rbp ; \
+    xchg vm_pc, vm_hp ; \
     pushf ; \
-    cmp r12, I ; \
-    jbe stack_underflow ; \
-    neg I ; \
-    mov X, qword ptr [rbx + I * 8] ; \
-    neg I ; \
+    cmp I, stack_slots_used ; \
+    jae stack_underflow ; \
+    mov X, qword ptr [vm_sp + I * STACK_SLOT_SIZE] ; \
     popf ; \
-    xchg rsp, rbp
+    xchg vm_pc, vm_hp
 
 #define JMP_IF_NULL(R64, LABEL) \
     cmp R64, TAGGED_NULL ; \
@@ -166,16 +159,16 @@ zero_location:
 
 .global interpret
 interpret:
-    mov rbp, rsp // vm heap pointer
-    mov rsp, rdi // vm instruction pointer
-    lea rbx, [rsi - 8] // vm stack pointer
-    xor r12d, r12d // 0 stack slots are in use
+    mov vm_hp, rsp   // vm heap pointer
+    mov vm_pc, rdi   // vm instruction pointer
+    mov vm_sp, rsi   // vm stack pointer
+    xor stack_slots_used, stack_slots_used // 0 stack slots are in use
     ret
 
 .section .text.add1
 .global add1
 add1:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_NOT_INT(rax, 1f)
     UNTAG_INT(rax)
@@ -189,7 +182,7 @@ add1:
 .section .text.sub1
 .global sub1
 sub1:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_NOT_INT(rax, 1f)
     UNTAG_INT(rax)
@@ -409,7 +402,7 @@ load:
 .section .text.zerop
 .global zerop
 zerop:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_INT(rax, 1f)
     ud2
@@ -425,7 +418,7 @@ zerop:
 .section .text.integerp
 .global integerp
 integerp:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_INT(rax, 1f)
     PUSH(FALSE)
@@ -437,7 +430,7 @@ integerp:
 .section .text.booleanp
 .global booleanp
 booleanp:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
@@ -449,7 +442,7 @@ booleanp:
 .section .text.charp
 .global charp
 charp:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
     PUSH(FALSE)
@@ -461,7 +454,7 @@ charp:
 .section .text.nullp
 .global nullp
 nullp:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_NULL(rax, 1f)
     PUSH(FALSE)
@@ -473,7 +466,7 @@ nullp:
 .section .text.not
 .global not
 not:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
@@ -489,7 +482,7 @@ not:
 .section .text.chartoint
 .global chartoint
 chartoint:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
     ud2
@@ -502,7 +495,7 @@ chartoint:
 .section .text.inttochar
 .global inttochar
 inttochar:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_INT(rax, 1f)
     ud2
@@ -527,7 +520,7 @@ cjump:
     cmp rcx, FALSE
     je 1f
     shl rax, 4
-    lea rsp, [rsp + rax]
+    lea vm_pc, [vm_pc + rax]
 1:
     ret
 
@@ -535,16 +528,15 @@ cjump:
 .global get
 get:
     pop rax // The offset from the stack base to get
-    cmp rax, r12
-    jb 1f
-    ud2 // Stack access out of range
-1:
-    // movq rax, [stack_base + (offset - r12 + 1) * slot_size]
-    sub rax, r12
-    inc rax
-    mov rax, qword ptr [rbx + rax * STACK_SLOT_SIZE]
+    cmp rax, stack_slots_used
+    jae 1f
+    neg rax
+    add rax, stack_slots_used
+    mov rax, qword ptr [vm_sp + rax * STACK_SLOT_SIZE - STACK_SLOT_SIZE]
     PUSH(rax)
     ret
+1:
+    ud2 // Stack access out of range
 
 .section .text.fall
 .global fall
@@ -564,7 +556,7 @@ fall:
 .section .text.forget
 .global forget
 forget:
-    add rsp, 8
+    add vm_pc, 8
     POP(rax)
     ret
 
@@ -573,17 +565,17 @@ forget:
 jump:
     pop rax
     shl rax, 4
-    lea rsp, [rsp + rax]
+    lea vm_pc, [vm_pc + rax]
     ret
 
 .section .text.cons
 .global cons
 cons:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax) // cdr
     POP(rcx) // car
-    sub rbp, 16 // alloc(16)
-    mov rdi, rbp // heap pointer
+    sub vm_hp, 16 // alloc(16)
+    mov rdi, vm_hp // heap pointer
     mov qword ptr [rdi], rcx
     mov qword ptr [rdi + 8], rax
     or rdi, 1
@@ -593,7 +585,7 @@ cons:
 .section .text.car
 .global car
 car:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
     ud2
@@ -606,7 +598,7 @@ car:
 .section .text.cdr
 .global cdr
 cdr:
-    add rsp, 8 // Skip immediate
+    add vm_pc, IMMEDIATE_SIZE
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
     ud2
@@ -621,11 +613,11 @@ cdr:
 string:
     pop rdi // arity
     // alloc(UP_TO_8(arity) + 8)
-    sub rbp, rdi
-    and rbp, -8
-    sub rbp, 8
-    mov rax, rbp // result
-    mov qword ptr [rbp], rdi // write arity into the struct
+    sub vm_hp, rdi
+    and vm_hp, -8
+    sub vm_hp, 8
+    mov rax, vm_hp // result
+    mov qword ptr [vm_hp], rdi // write arity into the struct
     xor esi, esi
 2:
     test rdi, rdi
@@ -647,7 +639,7 @@ string:
 .section .text.stringref
 .global stringref
 stringref:
-    add rsp, 8
+    add vm_pc, 8
     POP(rcx) // index
     JMP_IF_INT(rcx, 1f)
     ud2
@@ -670,7 +662,7 @@ stringref:
 .section .text.stringset
 .global stringset
 stringset:
-    add rsp, 8
+    add vm_pc, 8
     POP(rsi) // char
     JMP_IF_CHAR(rsi, 1f)
     ud2
@@ -702,9 +694,9 @@ stringappend:
     test rdx, rdx
     jne 1f
     // no args
-    sub rbp, 8
-    mov qword ptr [rbp], 0
-    mov rax, rbp
+    sub vm_hp, 8
+    mov qword ptr [vm_hp], 0
+    mov rax, vm_hp
     TAG_STRING(rax)
     PUSH(rax)
     ret
@@ -723,11 +715,11 @@ stringappend:
     jmp 1b
 1:
     // alloc(sum_of_strlens + 8)
-    sub rbp, rax
-    and rbp, -8
-    sub rbp, 8
-    mov qword ptr [rbp], rax // result length
-    lea rdi, [rbp + 8] // result buffer
+    sub vm_hp, rax
+    and vm_hp, -8
+    sub vm_hp, 8
+    mov qword ptr [vm_hp], rax // result length
+    lea rdi, [vm_hp + 8] // result buffer
 1:
     test rdx, rdx
     je 1f
@@ -740,7 +732,7 @@ stringappend:
     dec rdx
     jmp 1b
 1:
-    mov rax, rbp
+    mov rax, vm_hp
     TAG_STRING(rax)
     PUSH(rax)
     ret
@@ -753,10 +745,10 @@ vector:
     pop rdi // arity
     // alloc(arity * 8 + 8)
     neg rdi
-    lea rbp, [rbp + rdi * 8 - 8]
+    lea vm_hp, [vm_hp + rdi * 8 - 8]
     neg rdi
-    mov rax, rbp // result
-    mov qword ptr [rbp], rdi // write arity into the struct
+    mov rax, vm_hp // result
+    mov qword ptr [vm_hp], rdi // write arity into the struct
     xor esi, esi
 2:
     test rdi, rdi
@@ -774,7 +766,7 @@ vector:
 .section .text.vectorref
 .global vectorref
 vectorref:
-    add rsp, 8
+    add vm_pc, 8
     POP(rcx) // index
     JMP_IF_INT(rcx, 1f)
     ud2
@@ -795,7 +787,7 @@ vectorref:
 .section .text.vectorset
 .global vectorset
 vectorset:
-    add rsp, 8
+    add vm_pc, 8
     POP(rsi) // arg
     POP(rcx) // index
     JMP_IF_INT(rcx, 1f)
@@ -821,9 +813,9 @@ vectorappend:
     test rdx, rdx
     jne 1f
     // no args
-    sub rbp, 8
-    mov qword ptr [rbp], 0
-    mov rax, rbp
+    sub vm_hp, 8
+    mov qword ptr [vm_hp], 0
+    mov rax, vm_hp
     TAG_VECTOR(rax)
     PUSH(rax)
     ret
@@ -843,10 +835,10 @@ vectorappend:
 1:
     // alloc(sum_of_veclens * 8 + 8)
     neg rax
-    lea rbp, [rbp + rax * 8 - 8]
+    lea vm_hp, [vm_hp + rax * 8 - 8]
     neg rax
-    mov qword ptr [rbp], rax // result length
-    lea rdi, [rbp + 8] // result buffer
+    mov qword ptr [vm_hp], rax // result length
+    lea rdi, [vm_hp + 8] // result buffer
 1:
     test rdx, rdx
     je 1f
@@ -859,7 +851,7 @@ vectorappend:
     dec rdx
     jmp 1b
 1:
-    mov rax, rbp
+    mov rax, vm_hp
     TAG_VECTOR(rax)
     PUSH(rax)
     ret
@@ -870,15 +862,15 @@ vectorappend:
 .section .text.done
 .global done
 done:
-    test r12, r12
+    test stack_slots_used, stack_slots_used
     jne 1f
     PUSH(UNSPECIFIED)
 1:
-    cmp r12, 1
+    cmp stack_slots_used, 1
     jne 1f
-    mov rdi, qword ptr [rbx]  // Grab what's on top of the stack
-    xchg rsp, rbp             // Put the stack back
-    and rsp, -16              // Align the stack for a real function call
+    mov rdi, qword ptr [vm_sp]  // Grab what's on top of the stack
+    xchg vm_pc, vm_hp             // Put the stack back
+    and vm_pc, -16              // Align the stack for a real function call
     call print_value_and_exit // Call back into C
 1:
     ud2 // more than one thing left on the stack
