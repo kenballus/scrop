@@ -22,7 +22,7 @@ interpreter for the bytecode.
 bytecode opcodes are the addresses of their implementations in the interpreter.
 in other words, the bytecode programs are ropchains for the interpreter.
 
-x86\_64 asm and a little bit of c.
+x86\_64 asm and a little bit of c without any libc.
 
 ## building
 
