@@ -26,6 +26,12 @@
     mov qword ptr [vm_sp], X ; \
     lea stack_slots_used, [stack_slots_used + 1]
 
+#define GET_IMMEDIATE(R64) \
+    pop R64
+
+#define SKIP_IMMEDIATE \
+    add vm_pc, IMMEDIATE_SIZE
+
 // Needs to preserve flags
 #define POP(X) \
     xchg vm_pc, vm_hp ; \
@@ -33,6 +39,17 @@
     test stack_slots_used, stack_slots_used ; \
     je stack_underflow ; \
     mov X, qword ptr [vm_sp] ; \
+    add vm_sp, STACK_SLOT_SIZE ; \
+    dec stack_slots_used ; \
+    popf ; \
+    xchg vm_pc, vm_hp
+
+// Needs to preserve flags
+#define DROP \
+    xchg vm_pc, vm_hp ; \
+    pushf ; \
+    test stack_slots_used, stack_slots_used ; \
+    je stack_underflow ; \
     add vm_sp, STACK_SLOT_SIZE ; \
     dec stack_slots_used ; \
     popf ; \
@@ -168,7 +185,7 @@ interpret:
 .section .text.add1
 .global add1
 add1:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_NOT_INT(rax, 1f)
     UNTAG_INT(rax)
@@ -182,7 +199,7 @@ add1:
 .section .text.sub1
 .global sub1
 sub1:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_NOT_INT(rax, 1f)
     UNTAG_INT(rax)
@@ -196,7 +213,7 @@ sub1:
 .section .text.add
 .global add
 add:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(0))
@@ -225,7 +242,7 @@ add:
 .section .text.sub
 .global sub
 sub:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     test rdi, rdi
     jne 1f
     ud2 // can't have (-)
@@ -258,7 +275,7 @@ sub:
 .section .text.mul
 .global mul
 mul:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(1))
@@ -288,7 +305,7 @@ mul:
 .section .text.lt
 .global lt
 lt:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -325,7 +342,7 @@ lt:
 .section .text.eq
 .global eq 
 eq:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -362,7 +379,7 @@ eq:
 .section .text.eqp
 .global eqp
 eqp:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -395,14 +412,14 @@ eqp:
 .section .text.load
 .global load
 load:
-    pop rax   // Read immediate into rax
-    PUSH(rax) // Push it to interpreter stack
+    GET_IMMEDIATE(rax)
+    PUSH(rax)
     ret
 
 .section .text.zerop
 .global zerop
 zerop:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_INT(rax, 1f)
     ud2
@@ -418,7 +435,7 @@ zerop:
 .section .text.integerp
 .global integerp
 integerp:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_INT(rax, 1f)
     PUSH(FALSE)
@@ -430,7 +447,7 @@ integerp:
 .section .text.booleanp
 .global booleanp
 booleanp:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
@@ -442,7 +459,7 @@ booleanp:
 .section .text.charp
 .global charp
 charp:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
     PUSH(FALSE)
@@ -454,7 +471,7 @@ charp:
 .section .text.nullp
 .global nullp
 nullp:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_NULL(rax, 1f)
     PUSH(FALSE)
@@ -466,7 +483,7 @@ nullp:
 .section .text.not
 .global not
 not:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
@@ -482,7 +499,7 @@ not:
 .section .text.chartoint
 .global chartoint
 chartoint:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
     ud2
@@ -495,7 +512,7 @@ chartoint:
 .section .text.inttochar
 .global inttochar
 inttochar:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_INT(rax, 1f)
     ud2
@@ -512,7 +529,7 @@ inttochar:
 .section .text.cjump
 .global cjump
 cjump:
-    pop rax
+    GET_IMMEDIATE(rax)
     POP(rcx)
     JMP_IF_BOOL(rcx, 1f)
     ud2
@@ -527,7 +544,7 @@ cjump:
 .section .text.get
 .global get
 get:
-    pop rax // The offset from the stack base to get
+    GET_IMMEDIATE(rax) // The offset from the stack base to get
     cmp rax, stack_slots_used
     jae 1f
     neg rax
@@ -541,12 +558,12 @@ get:
 .section .text.fall
 .global fall
 fall:
-    pop rdi // amount to fall
+    GET_IMMEDIATE(rdi) // amount to fall
 1:
     test rdi, rdi
     je 1f
     POP(rax)
-    POP(rcx) // we use POP for the bounds check. Otherwise could be sub
+    DROP
     PUSH(rax)
     dec rdi
     jmp 1b
@@ -556,14 +573,14 @@ fall:
 .section .text.forget
 .global forget
 forget:
-    add vm_pc, 8
-    POP(rax)
+    SKIP_IMMEDIATE
+    DROP
     ret
 
 .section .text.jump
 .global jump
 jump:
-    pop rax
+    GET_IMMEDIATE(rax)
     shl rax, 4
     lea vm_pc, [vm_pc + rax]
     ret
@@ -571,11 +588,11 @@ jump:
 .section .text.cons
 .global cons
 cons:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax) // cdr
     POP(rcx) // car
     sub vm_hp, 16 // alloc(16)
-    mov rdi, vm_hp // heap pointer
+    mov rdi, vm_hp
     mov qword ptr [rdi], rcx
     mov qword ptr [rdi + 8], rax
     or rdi, 1
@@ -585,7 +602,7 @@ cons:
 .section .text.car
 .global car
 car:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
     ud2
@@ -598,7 +615,7 @@ car:
 .section .text.cdr
 .global cdr
 cdr:
-    add vm_pc, IMMEDIATE_SIZE
+    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
     ud2
@@ -611,7 +628,7 @@ cdr:
 .section .text.string
 .global string
 string:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     // alloc(UP_TO_8(arity) + 8)
     sub vm_hp, rdi
     and vm_hp, -8
@@ -639,7 +656,7 @@ string:
 .section .text.stringref
 .global stringref
 stringref:
-    add vm_pc, 8
+    SKIP_IMMEDIATE
     POP(rcx) // index
     JMP_IF_INT(rcx, 1f)
     ud2
@@ -662,7 +679,7 @@ stringref:
 .section .text.stringset
 .global stringset
 stringset:
-    add vm_pc, 8
+    SKIP_IMMEDIATE
     POP(rsi) // char
     JMP_IF_CHAR(rsi, 1f)
     ud2
@@ -690,7 +707,7 @@ stringset:
 .section .text.stringappend
 .global stringappend
 stringappend:
-    pop rdx // arity
+    GET_IMMEDIATE(rdx) // arity
     test rdx, rdx
     jne 1f
     // no args
@@ -742,7 +759,7 @@ stringappend:
 .section .text.vector
 .global vector
 vector:
-    pop rdi // arity
+    GET_IMMEDIATE(rdi) // arity
     // alloc(arity * 8 + 8)
     neg rdi
     lea vm_hp, [vm_hp + rdi * 8 - 8]
@@ -766,7 +783,7 @@ vector:
 .section .text.vectorref
 .global vectorref
 vectorref:
-    add vm_pc, 8
+    SKIP_IMMEDIATE
     POP(rcx) // index
     JMP_IF_INT(rcx, 1f)
     ud2
@@ -787,7 +804,7 @@ vectorref:
 .section .text.vectorset
 .global vectorset
 vectorset:
-    add vm_pc, 8
+    SKIP_IMMEDIATE
     POP(rsi) // arg
     POP(rcx) // index
     JMP_IF_INT(rcx, 1f)
@@ -809,7 +826,7 @@ vectorset:
 .section .text.vectorappend
 .global vectorappend
 vectorappend:
-    pop rdx // arity
+    GET_IMMEDIATE(rdx) // arity
     test rdx, rdx
     jne 1f
     // no args

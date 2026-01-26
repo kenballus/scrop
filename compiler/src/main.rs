@@ -118,8 +118,16 @@ fn consume_character(input: &[u8]) -> Option<(u8, &[u8])> {
 }
 
 fn consume_null(input: &[u8]) -> Option<&[u8]> {
-    if let Some(input) = consume_bytes(input, b"'()") {
-        Some(input)
+    if let Some(input) = consume_bytes(input, b"'") {
+        if let Some(input) = consume_bytes(consume_whitespace(input), b"(") {
+            if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
+                Some(input)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -260,6 +268,8 @@ fn consume_expression(input: &[u8]) -> Option<(Expression<'_>, &[u8])> {
         Some((Expression::Form(args), input))
     } else if let Some((v, input)) = consume_string_literal(input) {
         Some((Expression::String(v), input))
+    } else if let Some(input) = consume_null(input) {
+        Some((Expression::Null, input))
     } else {
         None
     }
