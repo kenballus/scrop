@@ -9,7 +9,7 @@ popd &>/dev/null
 
 
 for t in tests/*; do
-    printf "$t ... "
+    printf '%s ... ' "$t"
     if diff <(./run.bash < "$t/in") "$t/out"; then
         printf '\x1b[32mok'
     else

@@ -1,25 +1,30 @@
 .PHONY: all clean fmt
 
-all: interpreter
+TARGET := interpreter
+
+all: $(TARGET)
 
 CC := clang
-CFLAGS := -O0 -std=c23 -Wall -Wextra -Wpedantic -Wvla -Wshadow -Wno-c2y-extensions -nostdlib -fno-stack-protector
-LDFLAGS := -T layout.ld -static
+CFLAGS := -O0 -std=c23 -Wall -Wextra -Wpedantic -Wvla -Wshadow -Wno-c2y-extensions -fno-stack-protector -MMD -MP
+LDFLAGS := -T layout.ld -static -nostdlib
 
-interpreter-launcher.o: interpreter-launcher.c
-	$(CC) $(CFLAGS) -c $^ -o $@
+SRCS := $(wildcard *.c) $(wildcard *.S)
+OBJS := $(addsuffix .o, $(basename $(SRCS)))
+DEPS := $(OBJS:.o=.d)
 
-interpreter.o: interpreter.S
-	$(CC) $(CFLAGS) -c $^ -o $@
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-libc.o: libc.S
-	$(CC) $(CFLAGS) -c $^ -o $@
+%.o: %.S
+	$(CC) $(CFLAGS) -c $< -o $@
 
-interpreter: interpreter-launcher.o interpreter.o libc.o
-	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+$(TARGET): $(OBJS)
+	$(CC) $(LDFLAGS) $^ -o $@
 
 fmt:
 	clang-format --style='{IndentWidth: 4}' -i *.c *.h
 
+-include $(DEPS)
+
 clean:
-	rm -f interpreter *.o
+	rm -f $(TARGET) $(OBJS) $(DEPS)
