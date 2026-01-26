@@ -382,11 +382,7 @@ fn lower_list<'a>(
     stack_slots_used += 1;
     let num_args = args.len();
     for arg in args {
-        result.append(&mut lower_expression(
-            arg,
-            env,
-            stack_slots_used,
-        ));
+        result.append(&mut lower_expression(arg, env, stack_slots_used));
         stack_slots_used += 1;
     }
     result.push("LOAD NULL".to_owned());
