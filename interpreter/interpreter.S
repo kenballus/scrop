@@ -19,6 +19,7 @@
 // -      001 => pair
 // -      011 => string
 // -      010 => vector
+// -      110 => lambda
 
 // Needs to preserve flags
 #define PUSH(X) \
@@ -122,6 +123,13 @@
     POP(R64) ; \
     jne LABEL
 
+#define JMP_IF_NOT_LAMBDA(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, LAMBDA_MASK ; \
+    cmp R64, LAMBDA_SUFFIX ; \
+    POP(R64) ; \
+    jne LABEL
+
 #define TAG_INT(R64) \
     shl R64, 2
 
@@ -163,6 +171,17 @@
 #define UNTAG_VECTOR(R64) \
     and R64, -4
 
+#define TAG_LAMBDA(R64) \
+    or R64, LAMBDA_SUFFIX
+
+#define UNTAG_LAMBDA(R64) \
+    and R64, LAMBDA_MASK
+
+#define UNPACK(T, DST, ERR) \
+    POP(DST) ; \
+    JMP_IF_NOT_##T(DST, ERR) ; \
+    UNTAG_##T(DST)
+
 .section .text
 
 stack_overflow:
@@ -186,9 +205,7 @@ interpret:
 .global add1
 add1:
     SKIP_IMMEDIATE
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 1f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 1f)
     inc rax
     TAG_INT(rax)
     PUSH(rax)
@@ -200,9 +217,7 @@ add1:
 .global sub1
 sub1:
     SKIP_IMMEDIATE
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 1f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 1f)
     dec rax
     TAG_INT(rax)
     PUSH(rax)
@@ -213,15 +228,14 @@ sub1:
 .section .text.add
 .global add
 add:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 3f) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(0))
     ret
 1:
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 3f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 3f)
 2:
     // base case
     cmp rdi, 1
@@ -230,9 +244,7 @@ add:
     PUSH(rax)
     ret
 1:
-    POP(rcx)
-    JMP_IF_NOT_INT(rcx, 3f)
-    UNTAG_INT(rcx)
+    UNPACK(INT, rcx, 3f)
     add rax, rcx
     dec rdi
     jmp 2b
@@ -242,14 +254,13 @@ add:
 .section .text.sub
 .global sub
 sub:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 2f) // arity
     test rdi, rdi
     jne 1f
     ud2 // can't have (-)
 1:
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 2f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 2f)
 1:
     cmp rdi, 1
     jne 1f
@@ -259,9 +270,7 @@ sub:
     PUSH(rax)
     ret
 1:
-    POP(rcx)
-    JMP_IF_NOT_INT(rcx, 2f)
-    UNTAG_INT(rcx)
+    UNPACK(INT, rcx, 2f)
     sub rax, rcx
     dec rdi
     cmp rdi, 1
@@ -275,15 +284,14 @@ sub:
 .section .text.mul
 .global mul
 mul:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 3f) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(1))
     ret
 1:
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 3f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 3f)
 2:
     // base case
     cmp rdi, 1
@@ -292,9 +300,7 @@ mul:
     PUSH(rax)
     ret
 1:
-    POP(rcx)
-    JMP_IF_NOT_INT(rcx, 3f)
-    UNTAG_INT(rcx)
+    UNPACK(INT, rcx, 3f)
     mul rcx
     dec rdi
     jmp 2b
@@ -305,7 +311,8 @@ mul:
 .section .text.lt
 .global lt
 lt:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 2f) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -313,9 +320,7 @@ lt:
     PUSH(TRUE)
     ret
 1:
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 2f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 2f)
     dec rdi
     test rdi, rdi
     jne 1f
@@ -323,9 +328,7 @@ lt:
     PUSH(TRUE)
     ret
 1:
-    POP(rcx)
-    JMP_IF_NOT_INT(rcx, 2f)
-    UNTAG_INT(rcx)
+    UNPACK(INT, rcx, 2f)
     cmp rax, rcx
     setl al
     and sil, al
@@ -342,7 +345,8 @@ lt:
 .section .text.eq
 .global eq 
 eq:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 2f) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -350,9 +354,7 @@ eq:
     PUSH(TRUE)
     ret
 1:
-    POP(rax)
-    JMP_IF_NOT_INT(rax, 2f)
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 2f)
     dec rdi
     test rdi, rdi
     jne 1f
@@ -360,9 +362,7 @@ eq:
     PUSH(TRUE)
     ret
 1:
-    POP(rcx)
-    JMP_IF_NOT_INT(rcx, 2f)
-    UNTAG_INT(rcx)
+    UNPACK(INT, rcx, 2f)
     cmp rax, rcx
     sete al
     and sil, al
@@ -379,7 +379,8 @@ eq:
 .section .text.eqp
 .global eqp
 eqp:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 2f) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -628,7 +629,8 @@ cdr:
 .section .text.string
 .global string
 string:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 3f) // arity
     // alloc(UP_TO_8(arity) + 8)
     sub vm_hp, rdi
     and vm_hp, -8
@@ -652,6 +654,8 @@ string:
     inc rsi
     dec rdi
     jmp 2b
+3:
+    ud2
 
 .section .text.stringref
 .global stringref
@@ -707,7 +711,8 @@ stringset:
 .section .text.stringappend
 .global stringappend
 stringappend:
-    GET_IMMEDIATE(rdx) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdx, 2f) // arity
     test rdx, rdx
     jne 1f
     // no args
@@ -759,7 +764,8 @@ stringappend:
 .section .text.vector
 .global vector
 vector:
-    GET_IMMEDIATE(rdi) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 3f) // arity
     // alloc(arity * 8 + 8)
     neg rdi
     lea vm_hp, [vm_hp + rdi * 8 - 8]
@@ -779,6 +785,8 @@ vector:
     inc rsi
     dec rdi
     jmp 2b
+3:
+    ud2
 
 .section .text.vectorref
 .global vectorref
@@ -826,7 +834,8 @@ vectorset:
 .section .text.vectorappend
 .global vectorappend
 vectorappend:
-    GET_IMMEDIATE(rdx) // arity
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdx, 2f) // arity
     test rdx, rdx
     jne 1f
     // no args
@@ -875,6 +884,55 @@ vectorappend:
 2:
     ud2
 
+
+.section .text.savepc
+.global savepc
+savepc:
+    SKIP_IMMEDIATE
+    PUSH(vm_pc)
+    ret
+
+
+.section .text.call
+.global call
+call:
+    POP(rdi) // arity passed to call
+    JMP_IF_NOT_INT(rdi, 1f)
+    UNTAG_INT(rdi)
+    POP(rax) // lambda
+    JMP_IF_NOT_LAMBDA(rax, 1f)
+    UNTAG_LAMBDA(rax)
+    mov rdx, qword ptr [rax + 16] // arity
+    cmp rdi, rdx
+    jne 1f
+    mov rdx, qword ptr [rax + 8] // free variable value vector
+    PUSH(rdx)
+    mov vm_pc, qword ptr [rax] // code offset
+    ret
+1:
+    ud2
+
+
+.section .text.lambda
+.global lambda
+lambda:
+    GET_IMMEDIATE(rdx) // code offset
+    POP(rax) // free variable value vector
+    JMP_IF_NOT_VECTOR(rax, 2f)
+    UNTAG_VECTOR(rax)
+    POP(rcx) // arity
+    JMP_IF_NOT_INT(rcx, 2f)
+    UNTAG_INT(rcx)
+    sub vm_hp, 24
+    mov qword ptr [vm_hp], rdx
+    mov qword ptr [vm_hp + 8], rax
+    mov qword ptr [vm_hp + 16], rcx
+    mov rax, vm_hp
+    TAG_LAMBDA(rax)
+    PUSH(rax)
+    ret
+2:
+    ud2
 
 .section .text.done
 .global done

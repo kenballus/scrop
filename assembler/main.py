@@ -90,46 +90,36 @@ def main() -> None:
                 opcode = 0xADD1000
             case ["SUB1"]:
                 opcode = 0x50B1000
-            case ["ADD", v]:
+            case ["ADD"]:
                 opcode = 0x0ADD000
-                immediate = int(v).to_bytes(8, "little")
-            case ["SUB", v]:
+            case ["SUB"]:
                 opcode = 0x050B000
-                immediate = int(v).to_bytes(8, "little")
-            case ["MUL", v]:
+            case ["MUL"]:
                 opcode = 0x0A55000
-                immediate = int(v).to_bytes(8, "little")
-            case ["LT", v]:
+            case ["LT"]:
                 opcode = 0x1700000
-                immediate = int(v).to_bytes(8, "little")
-            case ["EQ", v]:
+            case ["EQ"]:
                 opcode = 0xE3E3000
-                immediate = int(v).to_bytes(8, "little")
-            case ["EQP", v]:
+            case ["EQP"]:
                 opcode = 0x3E3E000
-                immediate = int(v).to_bytes(8, "little")
             case ["ZEROP"]:
                 opcode = 0xEEEE000
-            case ["STRING", v]:
+            case ["STRING"]:
                 opcode = 0x571F000
-                immediate = int(v).to_bytes(8, "little")
             case ["STRINGREF"]:
                 opcode = 0x571E000
             case ["STRINGSET"]:
                 opcode = 0x5715000
-            case ["STRINGAPPEND", v]:
+            case ["STRINGAPPEND"]:
                 opcode = 0x571A000
-                immediate = int(v).to_bytes(8, "little")
-            case ["VECTOR", v]:
+            case ["VECTOR"]:
                 opcode = 0x5ECF000
-                immediate = int(v).to_bytes(8, "little")
             case ["VECTORREF"]:
                 opcode = 0x5ECE000
             case ["VECTORSET"]:
                 opcode = 0x5EC5000
-            case ["VECTORAPPEND", v]:
+            case ["VECTORAPPEND"]:
                 opcode = 0x5ECA000
-                immediate = int(v).to_bytes(8, "little")
             case ["INTEGERP"]:
                 opcode = 0x1234000
             case ["BOOLEANP"]:

@@ -352,8 +352,11 @@ fn lower_if<'a>(
     stack_slots_used += 1; // cond
     result.push("LOAD #f".to_owned());
     stack_slots_used += 1; // load
-    result.push("EQP 2".to_owned());
-    stack_slots_used -= 1; // eqp
+    result.push("LOAD 2".to_owned());
+    stack_slots_used += 1; // load
+    result.push("EQP ".to_owned());
+    stack_slots_used -= 3; // eqp args
+    stack_slots_used += 1; // eqp result
 
     // consequent
     let mut consequent_code = lower_expression(args.remove(0), env, stack_slots_used);
@@ -427,7 +430,8 @@ fn lower_variadic_primitive<'a>(
     for (i, arg) in args.into_iter().rev().enumerate() {
         result.append(&mut lower_expression(arg, env, stack_slots_used + i));
     }
-    result.push(format!("{mnemonic} {num_args}"));
+    result.append(&mut lower_expression(Expression::Int(num_args.try_into().unwrap()), env, stack_slots_used + num_args));
+    result.push(format!("{mnemonic}"));
     result
 }
 

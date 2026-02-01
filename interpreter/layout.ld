@@ -172,4 +172,19 @@ SECTIONS {
     .text.vectorappend : {
         *(vectorappend)
     }
+
+    . = 0x5afe000;
+    .text.savepc : {
+        *(savepc)
+    }
+
+    . = 0xbaaa000;
+    .text.lambda : {
+        *(lambda)
+    }
+
+    . = 0xca11000;
+    .text.call : {
+        *(call)
+    }
 }
