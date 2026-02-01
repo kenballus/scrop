@@ -661,14 +661,8 @@ string:
 .global stringref
 stringref:
     SKIP_IMMEDIATE
-    POP(rcx) // index
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1:
-    UNTAG_INT(rcx)
-    POP(rax) // string
-    JMP_IF_NOT_STRING(rax, 1f)
-    UNTAG_STRING(rax)
+    UNPACK(INT, rcx, 1f) // index
+    UNPACK(STRING, rax, 1f) // index
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f
@@ -689,14 +683,8 @@ stringset:
     ud2
 1:
     UNTAG_CHAR(rsi)
-    POP(rcx) // index
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1:
-    UNTAG_INT(rcx)
-    POP(rax) // string
-    JMP_IF_NOT_STRING(rax, 1f)
-    UNTAG_STRING(rax)
+    UNPACK(INT, rcx, 1f) // index
+    UNPACK(STRING, rax, 1f) // string
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f // index out of bounds
@@ -745,9 +733,7 @@ stringappend:
 1:
     test rdx, rdx
     je 1f
-    POP(rsi) // arg
-    JMP_IF_NOT_STRING(rsi, 2f)
-    UNTAG_STRING(rsi)
+    UNPACK(STRING, rsi, 2f) // arg
     mov rcx, qword ptr [rsi] // count
     add rsi, 8
     rep movsb
@@ -792,14 +778,8 @@ vector:
 .global vectorref
 vectorref:
     SKIP_IMMEDIATE
-    POP(rcx) // index
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1:
-    UNTAG_INT(rcx)
-    POP(rax) // vector
-    JMP_IF_NOT_VECTOR(rax, 1f)
-    UNTAG_VECTOR(rax)
+    UNPACK(INT, rcx, 1f) // index
+    UNPACK(VECTOR, rax, 1f) // vector
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f
@@ -819,9 +799,7 @@ vectorset:
     ud2
 1:
     UNTAG_INT(rcx)
-    POP(rax) // vector
-    JMP_IF_NOT_VECTOR(rax, 1f)
-    UNTAG_VECTOR(rax)
+    UNPACK(VECTOR, rax, 1f) // vector
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f // index out of bounds
@@ -868,9 +846,7 @@ vectorappend:
 1:
     test rdx, rdx
     je 1f
-    POP(rsi) // arg
-    JMP_IF_NOT_VECTOR(rsi, 2f)
-    UNTAG_VECTOR(rsi)
+    UNPACK(VECTOR, rsi, 2f) // arg
     mov rcx, qword ptr [rsi] // count
     add rsi, 8
     rep movsq
@@ -896,12 +872,8 @@ savepc:
 .section .text.call
 .global call
 call:
-    POP(rdi) // arity passed to call
-    JMP_IF_NOT_INT(rdi, 1f)
-    UNTAG_INT(rdi)
-    POP(rax) // lambda
-    JMP_IF_NOT_LAMBDA(rax, 1f)
-    UNTAG_LAMBDA(rax)
+    UNPACK(INT, rdi, 1f) // arity
+    UNPACK(LAMBDA, rax, 1f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdi, rdx
     jne 1f
@@ -917,12 +889,8 @@ call:
 .global lambda
 lambda:
     GET_IMMEDIATE(rdx) // code offset
-    POP(rax) // free variable value vector
-    JMP_IF_NOT_VECTOR(rax, 2f)
-    UNTAG_VECTOR(rax)
-    POP(rcx) // arity
-    JMP_IF_NOT_INT(rcx, 2f)
-    UNTAG_INT(rcx)
+    UNPACK(VECTOR, rax, 2f) // free variable value vector
+    UNPACK(INT, rcx, 2f) // arity
     sub vm_hp, 24
     mov qword ptr [vm_hp], rdx
     mov qword ptr [vm_hp + 8], rax
