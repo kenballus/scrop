@@ -489,7 +489,7 @@ not:
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
     ret
-2: // bool
+1: // bool
     UNTAG_BOOL(rax)
     not rax
     and rax, 1
@@ -889,8 +889,8 @@ call:
 .global lambda
 lambda:
     GET_IMMEDIATE(rdx) // code offset
-    UNPACK(VECTOR, rax, 2f) // free variable value vector
-    UNPACK(INT, rcx, 2f) // arity
+    UNPACK(VECTOR, rax, 1f) // free variable value vector
+    UNPACK(INT, rcx, 1f) // arity
     sub vm_hp, 24
     mov qword ptr [vm_hp], rdx
     mov qword ptr [vm_hp + 8], rax
@@ -899,7 +899,7 @@ lambda:
     TAG_LAMBDA(rax)
     PUSH(rax)
     ret
-2:
+1:
     ud2
 
 .section .text.done
