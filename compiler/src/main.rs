@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Read, stdin},
     str::from_utf8,
 };
@@ -289,12 +289,12 @@ fn consume_expressions(mut input: &[u8]) -> (Vec<Expression<'_>>, &[u8]) {
 fn lower_let<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
+    let mut new_variables = HashSet::new();
+    let mut new_env = env.clone();
     if let Expression::Form(bindings) = args.remove(0) {
-        let mut new_bindings = HashMap::new();
-        let mut stack_slots_used = stack_slots_used;
         let num_bindings = bindings.len();
 
         for binding in bindings {
@@ -304,10 +304,20 @@ fn lower_let<'a>(
                     "let binding has incorrect argument count."
                 );
                 if let (Expression::Symbol(name), exp) = (binding.remove(0), binding.remove(0)) {
-                    let insert_rc = new_bindings.insert(name, stack_slots_used);
-                    assert!(insert_rc.is_none(), "Duplicate key in let binding");
-                    result.append(&mut lower_expression(exp, env, stack_slots_used));
-                    stack_slots_used += 1;
+                    assert!(
+                        !new_variables.contains(name),
+                        "Duplicate key in let binding"
+                    );
+                    new_variables.insert(name);
+                    for v in new_env.values_mut() {
+                        *v += 1;
+                    }
+                    new_env.insert(name, 0);
+                    result.append(&mut lower_expression(
+                        exp,
+                        env,
+                        instructions_emitted + result.len(),
+                    ));
                 } else {
                     panic!("let binding args are not (Symbol, Expr)")
                 }
@@ -316,9 +326,11 @@ fn lower_let<'a>(
             }
         }
 
-        let new_env = &mut env.clone();
-        new_env.extend(new_bindings.drain());
-        result.append(&mut lower_expressions(args, new_env, stack_slots_used));
+        result.append(&mut lower_expressions(
+            args,
+            &new_env,
+            instructions_emitted + result.len(),
+        ));
         result.push(format!("FALL {num_bindings}"));
     } else {
         panic!("let bindings is not a form")
@@ -326,44 +338,214 @@ fn lower_let<'a>(
     result
 }
 
+fn scan_expression_for_free_variables<'a>(
+    exp: &Expression<'a>,
+    env: &HashMap<&'a [u8], usize>,
+    parameters: &HashSet<&'a [u8]>,
+) -> HashSet<&'a [u8]> {
+    let mut result = HashSet::new();
+    match exp {
+        // No validation happens here, because it is handled later by codegen
+        Expression::Form(args) => {
+            if let Some(arg0) = args.first()
+                && let Expression::Symbol(x) = arg0
+            {
+                if env.contains_key(x) {
+                    // this must be first to allow binding over lambda and let
+                    result.extend(scan_expressions_for_free_variables(args, env, parameters));
+                } else {
+                    match arg0 {
+                        Expression::Symbol(b"lambda") => {}
+                        Expression::Symbol(b"let") => {
+                            let mut new_parameters = parameters.clone();
+                            if let Some(Expression::Form(bindings)) = args.get(1) {
+                                for binding in bindings {
+                                    if let Expression::Form(binding_vec) = binding
+                                        && let [Expression::Symbol(k), v] = binding_vec.as_slice()
+                                    {
+                                        result.extend(scan_expression_for_free_variables(v, env, parameters /* not let*, so bindings can't use each other. */));
+                                        new_parameters.insert(k);
+                                    }
+                                }
+                            }
+                            // If any of the above checks fail, it's fine. codegen will catch it.
+                            result.extend(scan_expressions_for_free_variables(
+                                &args[2..],
+                                env,
+                                &new_parameters,
+                            ));
+                        }
+                        _ => result
+                            .extend(scan_expressions_for_free_variables(args, env, parameters)),
+                    }
+                }
+            }
+        }
+        Expression::Symbol(name) => {
+            if !parameters.contains(name) && env.contains_key(name) {
+                result.insert(name);
+            }
+        }
+        _ => {}
+    }
+    result
+}
+
+fn scan_expressions_for_free_variables<'a>(
+    exps: &[Expression<'a>],
+    env: &HashMap<&'a [u8], usize>,
+    parameters: &HashSet<&'a [u8]>,
+) -> HashSet<&'a [u8]> {
+    let mut result = HashSet::new();
+    for exp in exps {
+        result.extend(scan_expression_for_free_variables(exp, env, parameters).drain());
+    }
+    result
+}
+
+fn lower_call<'a>(
+    func: Expression<'a>,
+    args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    instructions_emitted: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+
+    let num_args = args.len();
+    let mut new_env = env.clone();
+    for arg in args.into_iter().rev() {
+        result.append(&mut lower_expression(
+            arg,
+            &new_env,
+            instructions_emitted + result.len(),
+        ));
+        for v in new_env.values_mut() {
+            *v += 1;
+        }
+    }
+    result.append(&mut lower_expression(
+        func,
+        &new_env,
+        instructions_emitted + result.len(),
+    ));
+    for v in new_env.values_mut() {
+        *v += 1;
+    }
+    result.push(format!("LOAD {num_args} // arity").to_owned());
+    result.push("CALL".to_owned());
+    result
+}
+
+fn lower_lambda<'a>(
+    mut args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    instructions_emitted: usize,
+) -> Vec<String> {
+    let mut result = Vec::new();
+    if let Expression::Form(parameters) = args.remove(0) {
+        let mut parameter_set = HashSet::new();
+        let mut parameter_names = Vec::new();
+        let arity = parameters.len();
+        for parameter in parameters {
+            if let Expression::Symbol(x) = parameter {
+                parameter_set.insert(x);
+                parameter_names.push(x);
+            } else {
+                panic!("lambda parameter is not a symbol");
+            }
+        }
+        let free_var_set =
+            scan_expressions_for_free_variables(args.as_slice(), env, &parameter_set);
+        let free_vars: Vec<_> = free_var_set.iter().collect();
+        result.append(&mut lower_variadic_primitive(
+            0,
+            "VECTOR",
+            free_vars.iter().map(|x| Expression::Symbol(x)).collect(),
+            env,
+            instructions_emitted + result.len(),
+        ));
+        result.push(format!("LOAD {arity} // arity").to_owned());
+        result.push(
+            format!(
+                "LAMBDA {}",
+                instructions_emitted + result.len() + 1 /* for LAMBDA */ + 1 /* for JUMP */
+            )
+            .to_owned(),
+        );
+        let mut lambda_env = HashMap::new();
+        // caller pushes args in reverse order
+        for p in parameter_names.into_iter().rev() {
+            for v in lambda_env.values_mut() {
+                *v += 1;
+            }
+            lambda_env.insert(p, 0);
+        }
+        // CALL unpacks the freevar vector into the stack in reverse order
+        for f in free_vars.into_iter().rev() {
+            for v in lambda_env.values_mut() {
+                *v += 1;
+            }
+            lambda_env.insert(f, 0);
+        }
+        for v in lambda_env.values_mut() {
+            *v += 1; // for arity + num_freevars, which is passed after the args
+            *v += 1; // for retaddr
+        }
+        let mut lambda_body =
+            lower_expressions(args, &lambda_env, instructions_emitted + result.len());
+        lambda_body.push("RETURN".to_owned());
+        result.push(format!("JUMP {}", lambda_body.len()));
+        result.append(&mut lambda_body);
+        result
+    } else {
+        panic!("lambda parameter list is invalid")
+    }
+}
+
 fn lower_begin<'a>(
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     if args.is_empty() {
         // Technically wrong; whether begin allows 0 args is context-dependent
         vec!["LOAD UNSPECIFIED".to_owned()]
     } else {
-        lower_expressions(args, env, stack_slots_used)
+        lower_expressions(args, env, instructions_emitted)
     }
 }
 
 fn lower_if<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
-    let mut stack_slots_used = stack_slots_used;
     assert!(matches!(args.len(), 2 | 3), "Invalid argument count to if");
     // cond
-    result.append(&mut lower_expression(args.remove(0), env, stack_slots_used));
-    stack_slots_used += 1; // cond
+    result.append(&mut lower_expression(
+        args.remove(0),
+        env,
+        instructions_emitted + result.len(),
+    ));
     result.push("LOAD #f".to_owned());
-    stack_slots_used += 1; // load
     result.push("LOAD 2".to_owned());
-    stack_slots_used += 1; // load
     result.push("EQP ".to_owned());
-    stack_slots_used -= 3; // eqp args
-    stack_slots_used += 1; // eqp result
 
     // consequent
-    let mut consequent_code = lower_expression(args.remove(0), env, stack_slots_used);
+    let mut consequent_code = lower_expression(
+        args.remove(0),
+        env,
+        instructions_emitted + result.len() + 1, /* for CJUMP */
+    );
 
     // alternative
     let mut alternative_code = if let Some(alternative_code) = args.pop() {
-        lower_expression(alternative_code, env, stack_slots_used)
+        lower_expression(
+            alternative_code,
+            env,
+            instructions_emitted + result.len() + 1 /* for CJUMP */ + consequent_code.len() + 1, /* for JUMP */
+        )
     } else {
         vec!["LOAD UNSPECIFIED".to_owned()]
     };
@@ -379,14 +561,20 @@ fn lower_if<'a>(
 fn lower_list<'a>(
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    mut stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
+    let mut new_env = env.clone();
     let mut result = Vec::new();
-    stack_slots_used += 1;
     let num_args = args.len();
     for arg in args {
-        result.append(&mut lower_expression(arg, env, stack_slots_used));
-        stack_slots_used += 1;
+        result.append(&mut lower_expression(
+            arg,
+            &new_env,
+            instructions_emitted + result.len(),
+        ));
+        for v in new_env.values_mut() {
+            *v += 1;
+        }
     }
     result.push("LOAD NULL".to_owned());
     for _ in 0..num_args {
@@ -400,7 +588,7 @@ fn lower_nary_primitive<'a>(
     n: usize,
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
     assert!(
@@ -408,7 +596,11 @@ fn lower_nary_primitive<'a>(
         "incorrect argument count for {n}-ary primitive"
     );
     for arg in args {
-        result.append(&mut lower_expression(arg, env, stack_slots_used));
+        result.append(&mut lower_expression(
+            arg,
+            env,
+            instructions_emitted + result.len(),
+        ));
     }
     result.push(mnemonic.to_owned());
     result
@@ -419,85 +611,108 @@ fn lower_variadic_primitive<'a>(
     mnemonic: &str,
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
+    let mut new_env = env.clone();
     let num_args = args.len();
     assert!(
         num_args >= min_args,
         "Too few arguments provided to variadic primitive"
     );
-    for (i, arg) in args.into_iter().rev().enumerate() {
-        result.append(&mut lower_expression(arg, env, stack_slots_used + i));
+    for arg in args.into_iter().rev() {
+        result.append(&mut lower_expression(
+            arg,
+            &new_env,
+            instructions_emitted + result.len(),
+        ));
+        for v in new_env.values_mut() {
+            *v += 1;
+        }
     }
-    result.append(&mut lower_expression(Expression::Int(num_args.try_into().unwrap()), env, stack_slots_used + num_args));
-    result.push(format!("{mnemonic}"));
+    result.push(format!("LOAD {num_args} // arity"));
+    result.push(mnemonic.to_string());
     result
 }
 
 fn lower_form<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     assert!(!args.is_empty(), "Empty form!");
-    if let Expression::Symbol(name) = args.remove(0) {
+    let arg_0 = args.remove(0);
+    if let Expression::Symbol(name) = arg_0 {
         if env.contains_key(name) {
-            todo!("Function calls are not yet implemented.")
-        }
-        match name {
-            b"begin" => lower_begin(args, env, stack_slots_used),
-            b"let" => lower_let(args, env, stack_slots_used),
-            b"if" => lower_if(args, env, stack_slots_used),
-            b"add1" => lower_nary_primitive("ADD1", 1, args, env, stack_slots_used),
-            b"sub1" => lower_nary_primitive("SUB1", 1, args, env, stack_slots_used),
-            b"zero?" => lower_nary_primitive("ZEROP", 1, args, env, stack_slots_used),
-            b"integer?" => lower_nary_primitive("INTEGERP", 1, args, env, stack_slots_used),
-            b"boolean?" => lower_nary_primitive("BOOLEANP", 1, args, env, stack_slots_used),
-            b"char?" => lower_nary_primitive("CHARP", 1, args, env, stack_slots_used),
-            b"null?" => lower_nary_primitive("NULLP", 1, args, env, stack_slots_used),
-            b"not" => lower_nary_primitive("NOT", 1, args, env, stack_slots_used),
-            b"char->integer" => lower_nary_primitive("CHARTOINT", 1, args, env, stack_slots_used),
-            b"integer->char" => lower_nary_primitive("INTTOCHAR", 1, args, env, stack_slots_used),
-            b"+" => lower_variadic_primitive(0, "ADD", args, env, stack_slots_used),
-            b"-" => lower_variadic_primitive(1, "SUB", args, env, stack_slots_used),
-            b"*" => lower_variadic_primitive(0, "MUL", args, env, stack_slots_used),
-            b"<" => lower_variadic_primitive(0, "LT", args, env, stack_slots_used),
-            b"=" => lower_variadic_primitive(0, "EQ", args, env, stack_slots_used),
-            b"eq?" => lower_variadic_primitive(0, "EQP", args, env, stack_slots_used),
-            b"string" => lower_variadic_primitive(0, "STRING", args, env, stack_slots_used),
-            b"string-append" => {
-                lower_variadic_primitive(0, "STRINGAPPEND", args, env, stack_slots_used)
+            lower_call(Expression::Symbol(name), args, env, instructions_emitted)
+        } else {
+            match name {
+                b"begin" => lower_begin(args, env, instructions_emitted),
+                b"let" => lower_let(args, env, instructions_emitted),
+                b"if" => lower_if(args, env, instructions_emitted),
+                b"add1" => lower_nary_primitive("ADD1", 1, args, env, instructions_emitted),
+                b"sub1" => lower_nary_primitive("SUB1", 1, args, env, instructions_emitted),
+                b"zero?" => lower_nary_primitive("ZEROP", 1, args, env, instructions_emitted),
+                b"integer?" => lower_nary_primitive("INTEGERP", 1, args, env, instructions_emitted),
+                b"boolean?" => lower_nary_primitive("BOOLEANP", 1, args, env, instructions_emitted),
+                b"char?" => lower_nary_primitive("CHARP", 1, args, env, instructions_emitted),
+                b"null?" => lower_nary_primitive("NULLP", 1, args, env, instructions_emitted),
+                b"not" => lower_nary_primitive("NOT", 1, args, env, instructions_emitted),
+                b"char->integer" => {
+                    lower_nary_primitive("CHARTOINT", 1, args, env, instructions_emitted)
+                }
+                b"integer->char" => {
+                    lower_nary_primitive("INTTOCHAR", 1, args, env, instructions_emitted)
+                }
+                b"+" => lower_variadic_primitive(0, "ADD", args, env, instructions_emitted),
+                b"-" => lower_variadic_primitive(1, "SUB", args, env, instructions_emitted),
+                b"*" => lower_variadic_primitive(0, "MUL", args, env, instructions_emitted),
+                b"<" => lower_variadic_primitive(0, "LT", args, env, instructions_emitted),
+                b"=" => lower_variadic_primitive(0, "EQ", args, env, instructions_emitted),
+                b"eq?" => lower_variadic_primitive(0, "EQP", args, env, instructions_emitted),
+                b"string" => lower_variadic_primitive(0, "STRING", args, env, instructions_emitted),
+                b"string-append" => {
+                    lower_variadic_primitive(0, "STRINGAPPEND", args, env, instructions_emitted)
+                }
+                b"string-ref" => {
+                    lower_nary_primitive("STRINGREF", 2, args, env, instructions_emitted)
+                }
+                b"string-set!" => {
+                    lower_nary_primitive("STRINGSET", 3, args, env, instructions_emitted)
+                }
+                b"vector" => lower_variadic_primitive(0, "VECTOR", args, env, instructions_emitted),
+                b"vector-append" => {
+                    lower_variadic_primitive(0, "VECTORAPPEND", args, env, instructions_emitted)
+                }
+                b"vector-ref" => {
+                    lower_nary_primitive("VECTORREF", 2, args, env, instructions_emitted)
+                }
+                b"vector-set!" => {
+                    lower_nary_primitive("VECTORSET", 3, args, env, instructions_emitted)
+                }
+                b"cons" => lower_nary_primitive("CONS", 2, args, env, instructions_emitted),
+                b"car" => lower_nary_primitive("CAR", 1, args, env, instructions_emitted),
+                b"cdr" => lower_nary_primitive("CDR", 1, args, env, instructions_emitted),
+                b"list" => lower_list(args, env, instructions_emitted),
+                b"lambda" => lower_lambda(args, env, instructions_emitted),
+                _ => panic!("Cannot resolve symbol '{name:?}'"),
             }
-            b"string-ref" => lower_nary_primitive("STRINGREF", 2, args, env, stack_slots_used),
-            b"string-set!" => lower_nary_primitive("STRINGSET", 3, args, env, stack_slots_used),
-            b"vector" => lower_variadic_primitive(0, "VECTOR", args, env, stack_slots_used),
-            b"vector-append" => {
-                lower_variadic_primitive(0, "VECTORAPPEND", args, env, stack_slots_used)
-            }
-            b"vector-ref" => lower_nary_primitive("VECTORREF", 2, args, env, stack_slots_used),
-            b"vector-set!" => lower_nary_primitive("VECTORSET", 3, args, env, stack_slots_used),
-            b"cons" => lower_nary_primitive("CONS", 2, args, env, stack_slots_used),
-            b"car" => lower_nary_primitive("CAR", 1, args, env, stack_slots_used),
-            b"cdr" => lower_nary_primitive("CDR", 1, args, env, stack_slots_used),
-            b"list" => lower_list(args, env, stack_slots_used),
-            _ => panic!("Cannot resolve symbol '{name:?}'"),
         }
     } else {
-        panic!("First entry in form is invalid.")
+        lower_call(arg_0, args, env, instructions_emitted)
     }
 }
 
 fn lower_expression<'a>(
     exp: Expression<'a>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     match exp {
         Expression::Int(x) => vec!["LOAD ".to_owned() + &x.to_string()],
         Expression::Char(x) => vec![format!("LOAD #\\x{x:x}")],
         Expression::Bool(x) => vec!["LOAD ".to_owned() + if x { "#t" } else { "#f" }],
-        Expression::Form(args) => lower_form(args, env, stack_slots_used),
+        Expression::Form(args) => lower_form(args, env, instructions_emitted),
         Expression::Null => vec!["LOAD NULL".to_owned()],
         Expression::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
@@ -514,7 +729,7 @@ fn lower_expression<'a>(
             "STRING",
             v.into_iter().map(Expression::Char).collect(),
             env,
-            stack_slots_used,
+            instructions_emitted,
         ),
     }
 }
@@ -522,12 +737,16 @@ fn lower_expression<'a>(
 fn lower_expressions<'a>(
     exps: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
-    stack_slots_used: usize,
+    instructions_emitted: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
     let num_exps = exps.len();
     for (i, exp) in exps.into_iter().enumerate() {
-        result.append(&mut lower_expression(exp, env, stack_slots_used));
+        result.append(&mut lower_expression(
+            exp,
+            env,
+            instructions_emitted + result.len(),
+        ));
         if i != num_exps - 1 {
             result.push("FORGET".to_owned());
         }

@@ -6,6 +6,7 @@
 #define vm_sp rbx
 #define vm_hp rbp
 #define stack_slots_used r12
+#define code_base r13
 
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
 // Each opcode is simply the address of its implementation.
@@ -35,7 +36,7 @@
 
 // Needs to preserve flags
 #define POP(X) \
-    xchg vm_pc, vm_hp ; \
+    xchg rsp, vm_hp ; \
     pushf ; \
     test stack_slots_used, stack_slots_used ; \
     je stack_underflow ; \
@@ -43,38 +44,31 @@
     add vm_sp, STACK_SLOT_SIZE ; \
     dec stack_slots_used ; \
     popf ; \
-    xchg vm_pc, vm_hp
+    xchg rsp, vm_hp
 
 // Needs to preserve flags
 #define DROP \
-    xchg vm_pc, vm_hp ; \
+    xchg rsp, vm_hp ; \
     pushf ; \
     test stack_slots_used, stack_slots_used ; \
     je stack_underflow ; \
     add vm_sp, STACK_SLOT_SIZE ; \
     dec stack_slots_used ; \
     popf ; \
-    xchg vm_pc, vm_hp
+    xchg rsp, vm_hp
 
 // Needs to preserve flags
 #define PEEK(X, I) \
-    xchg vm_pc, vm_hp ; \
+    xchg rsp, vm_hp ; \
     pushf ; \
     cmp I, stack_slots_used ; \
     jae stack_underflow ; \
     mov X, qword ptr [vm_sp + I * STACK_SLOT_SIZE] ; \
     popf ; \
-    xchg vm_pc, vm_hp
+    xchg rsp, vm_hp
 
 #define JMP_IF_NULL(R64, LABEL) \
     cmp R64, TAGGED_NULL ; \
-    je LABEL
-
-#define JMP_IF_INT(R64, LABEL) \
-    PUSH(R64) ; \
-    and R64, INT_MASK ; \
-    test R64, R64 ; \
-    POP(R64) ; \
     je LABEL
 
 #define JMP_IF_NOT_INT(R64, LABEL) \
@@ -175,12 +169,16 @@
     or R64, LAMBDA_SUFFIX
 
 #define UNTAG_LAMBDA(R64) \
-    and R64, LAMBDA_MASK
+    and R64, ~LAMBDA_MASK
 
 #define UNPACK(T, DST, ERR) \
     POP(DST) ; \
     JMP_IF_NOT_##T(DST, ERR) ; \
     UNTAG_##T(DST)
+
+#define PACK(T, SRC) \
+    TAG_##T(SRC) ; \
+    PUSH(SRC)
 
 .section .text
 
@@ -199,6 +197,7 @@ interpret:
     mov vm_pc, rdi   // vm instruction pointer
     mov vm_sp, rsi   // vm stack pointer
     xor stack_slots_used, stack_slots_used // 0 stack slots are in use
+    mov code_base, vm_pc // code_base
     ret
 
 .section .text.add1
@@ -207,8 +206,7 @@ add1:
     SKIP_IMMEDIATE
     UNPACK(INT, rax, 1f)
     inc rax
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 1:
     ud2
@@ -219,8 +217,7 @@ sub1:
     SKIP_IMMEDIATE
     UNPACK(INT, rax, 1f)
     dec rax
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 1:
     ud2
@@ -240,8 +237,7 @@ add:
     // base case
     cmp rdi, 1
     jne 1f
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 1:
     UNPACK(INT, rcx, 3f)
@@ -266,8 +262,7 @@ sub:
     jne 1f
     // unary special case
     neg rax
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 1:
     UNPACK(INT, rcx, 2f)
@@ -275,8 +270,7 @@ sub:
     dec rdi
     cmp rdi, 1
     jne 1b
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 2:
     ud2
@@ -296,8 +290,7 @@ mul:
     // base case
     cmp rdi, 1
     jne 1f
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 1:
     UNPACK(INT, rcx, 3f)
@@ -336,8 +329,7 @@ lt:
     dec rdi
     test rdi, rdi
     jne 1b
-    TAG_BOOL(rsi)
-    PUSH(rsi)
+    PACK(BOOL, rsi)
     ret
 2:
     ud2
@@ -370,8 +362,7 @@ eq:
     dec rdi
     test rdi, rdi
     jne 1b
-    TAG_BOOL(rsi)
-    PUSH(rsi)
+    PACK(BOOL, rsi)
     ret
 2:
     ud2
@@ -404,8 +395,7 @@ eqp:
     dec rdi
     test rdi, rdi
     jne 1b
-    TAG_BOOL(rsi)
-    PUSH(rsi)
+    PACK(BOOL, rsi)
     ret
 2:
     ud2
@@ -421,28 +411,25 @@ load:
 .global zerop
 zerop:
     SKIP_IMMEDIATE
-    POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1: // int
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 1f)
     test rax, rax
     mov eax, 0 // cannot be xor because of flags
     sete al
-    TAG_BOOL(rax)
-    PUSH(rax)
+    PACK(BOOL, rax)
     ret
+1:
+    ud2
 
 .section .text.integerp
 .global integerp
 integerp:
     SKIP_IMMEDIATE
     POP(rax)
-    JMP_IF_INT(rax, 1f)
-    PUSH(FALSE)
-    ret
-1: // int
+    JMP_IF_NOT_INT(rax, 1f)
     PUSH(TRUE)
+    ret
+1:
+    PUSH(FALSE)
     ret
 
 .section .text.booleanp
@@ -493,8 +480,7 @@ not:
     UNTAG_BOOL(rax)
     not rax
     and rax, 1
-    TAG_BOOL(rax)
-    PUSH(rax)
+    PACK(BOOL, rax)
     ret
 
 .section .text.chartoint
@@ -506,26 +492,20 @@ chartoint:
     ud2
 1: // char
     UNTAG_CHAR(rax)
-    TAG_INT(rax)
-    PUSH(rax)
+    PACK(INT, rax)
     ret
 
 .section .text.inttochar
 .global inttochar
 inttochar:
     SKIP_IMMEDIATE
-    POP(rax)
-    JMP_IF_INT(rax, 1f)
-    ud2
-1: // int
-    UNTAG_INT(rax)
+    UNPACK(INT, rax, 2f)
     cmp rax, 128
-    jb 1f
-    ud2
-1: // in range
-    TAG_CHAR(rax)
-    PUSH(rax)
+    jae 2f
+    PACK(CHAR, rax)
     ret
+2:
+    ud2
 
 .section .text.cjump
 .global cjump
@@ -545,12 +525,10 @@ cjump:
 .section .text.get
 .global get
 get:
-    GET_IMMEDIATE(rax) // The offset from the stack base to get
+    GET_IMMEDIATE(rax) // The offset from the sp to get
     cmp rax, stack_slots_used
     jae 1f
-    neg rax
-    add rax, stack_slots_used
-    mov rax, qword ptr [vm_sp + rax * STACK_SLOT_SIZE - STACK_SLOT_SIZE]
+    mov rax, qword ptr [vm_sp + rax * STACK_SLOT_SIZE]
     PUSH(rax)
     ret
 1:
@@ -641,8 +619,7 @@ string:
 2:
     test rdi, rdi
     jne 1f
-    TAG_STRING(rax)
-    PUSH(rax)
+    PACK(STRING, rax)
     ret
 1:
     POP(rcx)
@@ -668,8 +645,7 @@ stringref:
     jae 1f
     mov al, byte ptr [rax + rcx + 8]
     and rax, 0xff
-    TAG_CHAR(rax)
-    PUSH(rax)
+    PACK(CHAR, rax)
     ret
 1:
     ud2
@@ -690,8 +666,7 @@ stringset:
     jae 1f // index out of bounds
     mov byte ptr [rax + rcx + 8], sil
     and rax, 0xff
-    TAG_CHAR(rax)
-    PUSH(rax)
+    PACK(CHAR, rax)
     ret
 1:
     ud2
@@ -707,8 +682,7 @@ stringappend:
     sub vm_hp, 8
     mov qword ptr [vm_hp], 0
     mov rax, vm_hp
-    TAG_STRING(rax)
-    PUSH(rax)
+    PACK(STRING, rax)
     ret
 1:
     // at least one arg
@@ -741,8 +715,7 @@ stringappend:
     jmp 1b
 1:
     mov rax, vm_hp
-    TAG_STRING(rax)
-    PUSH(rax)
+    PACK(STRING, rax)
     ret
 2:
     ud2
@@ -762,8 +735,7 @@ vector:
 2:
     test rdi, rdi
     jne 1f
-    TAG_VECTOR(rax)
-    PUSH(rax)
+    PACK(VECTOR, rax)
     ret
 1:
     POP(rcx)
@@ -794,11 +766,7 @@ vectorref:
 vectorset:
     SKIP_IMMEDIATE
     POP(rsi) // arg
-    POP(rcx) // index
-    JMP_IF_INT(rcx, 1f)
-    ud2
-1:
-    UNTAG_INT(rcx)
+    UNPACK(INT, rcx, 1f) // index
     UNPACK(VECTOR, rax, 1f) // vector
     mov rdi, qword ptr [rax]
     cmp rcx, rax
@@ -820,8 +788,7 @@ vectorappend:
     sub vm_hp, 8
     mov qword ptr [vm_hp], 0
     mov rax, vm_hp
-    TAG_VECTOR(rax)
-    PUSH(rax)
+    PACK(VECTOR, rax)
     ret
 1:
     // at least one arg
@@ -854,34 +821,54 @@ vectorappend:
     jmp 1b
 1:
     mov rax, vm_hp
-    TAG_VECTOR(rax)
-    PUSH(rax)
+    PACK(VECTOR, rax)
     ret
 2:
     ud2
 
 
-.section .text.savepc
-.global savepc
-savepc:
-    SKIP_IMMEDIATE
-    PUSH(vm_pc)
-    ret
-
-
 .section .text.call
 .global call
 call:
+    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 1f) // arity
     UNPACK(LAMBDA, rax, 1f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdi, rdx
-    jne 1f
-    mov rdx, qword ptr [rax + 8] // free variable value vector
-    PUSH(rdx)
-    mov vm_pc, qword ptr [rax] // code offset
-    ret
+    jne 2f // arity mismatch
+    mov rdx, qword ptr [rax + 8] // freevar vector
+
+    // unpack freevars to stack
+    mov rcx, qword ptr [rdx] // vector length
 1:
+    test rcx, rcx
+    je 1f
+    mov rsi, qword ptr [rdx + rcx * 8]
+    PUSH(rsi)
+    dec rcx
+    jmp 1b
+
+1:
+    add rdi, qword ptr [rdx]  // arity + num_freevars
+    PUSH(rdi)
+    mov rdi, vm_pc // retaddr
+    PUSH(rdi) // cannot directly push vm_pc because PUSH uses rsp internally
+    mov vm_pc, qword ptr [rax] // code offset
+    shl vm_pc, 4
+    add vm_pc, code_base
+
+    // the stack now looks like this:
+    // arg N
+    // ...
+    // arg 0
+    // freevar N
+    // ...
+    // freevar 0
+    // arity + num_freevars
+    // retaddr
+
+    ret
+2:
     ud2
 
 
@@ -889,18 +876,36 @@ call:
 .global lambda
 lambda:
     GET_IMMEDIATE(rdx) // code offset
-    UNPACK(VECTOR, rax, 1f) // free variable value vector
     UNPACK(INT, rcx, 1f) // arity
+    UNPACK(VECTOR, rax, 1f) // free variable value vector
     sub vm_hp, 24
     mov qword ptr [vm_hp], rdx
     mov qword ptr [vm_hp + 8], rax
     mov qword ptr [vm_hp + 16], rcx
     mov rax, vm_hp
-    TAG_LAMBDA(rax)
-    PUSH(rax)
+    PACK(LAMBDA, rax)
     ret
 1:
     ud2
+
+.section .text.return
+.global return
+return:
+    SKIP_IMMEDIATE
+    POP(rdx) // retval
+    POP(rax) // retaddr
+    mov vm_pc, rax // can't use in POP because it uses rsp internally
+    POP(rcx) // arity + num_freevars
+    
+1:
+    test rcx, rcx
+    je 1f
+    DROP
+    dec rcx
+    jmp 1b
+1:
+    PUSH(rdx)
+    ret
 
 .section .text.done
 .global done
@@ -911,9 +916,9 @@ done:
 1:
     cmp stack_slots_used, 1
     jne 1f
-    mov rdi, qword ptr [vm_sp]  // Grab what's on top of the stack
-    xchg vm_pc, vm_hp             // Put the stack back
-    and vm_pc, -16              // Align the stack for a real function call
-    call print_value_and_exit // Call back into C
+    mov rdi, qword ptr [vm_sp] // Grab what's on top of the stack
+    xchg rsp, vm_hp          // Put the stack back
+    and rsp, -16             // Align the stack for a real function call
+    call print_value_and_exit  // Call back into C
 1:
     ud2 // more than one thing left on the stack

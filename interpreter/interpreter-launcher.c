@@ -148,8 +148,19 @@ static void print_value(uint64_t const v) {
             }
         }
         PRINT_STRING_LITERAL(")");
+    } else if ((v & LAMBDA_MASK) == LAMBDA_SUFFIX) {
+        uint64_t *v_ptr = (uint64_t *)(v & ~LAMBDA_MASK);
+        PRINT_STRING_LITERAL("#<lambda free_vars=");
+        print_value(v_ptr[1] | VECTOR_SUFFIX);
+        PRINT_STRING_LITERAL(" arity=");
+        print_i64_or_die(v_ptr[2]);
+        PRINT_STRING_LITERAL(" offset=");
+        print_i64_or_die(v_ptr[0]);
+        PRINT_STRING_LITERAL(">");
     } else if (v != UNSPECIFIED) {
-        PRINT_STRING_LITERAL("value is malformed.\n");
+        PRINT_STRING_LITERAL("value ");
+        print_i64_or_die(v);
+        PRINT_STRING_LITERAL(" is malformed.\n");
         exit(EXIT_FAILURE);
     }
 }

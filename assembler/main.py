@@ -71,7 +71,10 @@ def main() -> None:
     for line in filter(lambda l: l.strip(), sys.stdin.readlines()):
         opcode: int | None = None
         immediate: bytes = DEFAULT_IMMEDIATE
-        match line.split():
+        split_line: list[str] = line.split()
+        if "//" in split_line:
+            split_line = split_line[: split_line.index("//")]
+        match split_line:
             case ["LOAD", v]:
                 opcode = 0x10AD000
                 immediate = serialize_immediate(parse_immediate(v))
@@ -143,6 +146,13 @@ def main() -> None:
                 opcode = 0xCA00000
             case ["CDR"]:
                 opcode = 0xCD00000
+            case ["LAMBDA", v]:
+                opcode = 0xBAAA000
+                immediate = int(v).to_bytes(8, "little")
+            case ["CALL"]:
+                opcode = 0xCA11000
+            case ["RETURN"]:
+                opcode = 0xDB22000
             case _:
                 raise ValueError(f"Couldn't parse line {line}")
         os.write(1, opcode.to_bytes(8, "little") + immediate)
