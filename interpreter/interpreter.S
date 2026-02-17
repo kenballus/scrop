@@ -877,7 +877,7 @@ call:
 lambda:
     GET_IMMEDIATE(rdx) // code offset
     UNPACK(INT, rcx, 1f) // arity
-    UNPACK(VECTOR, rax, 1f) // free variable value vector
+    UNPACK(VECTOR, rax, 1f) // freevar value vector
     sub vm_hp, 24
     mov qword ptr [vm_hp], rdx
     mov qword ptr [vm_hp + 8], rax

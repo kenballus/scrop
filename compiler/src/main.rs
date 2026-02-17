@@ -347,37 +347,55 @@ fn scan_expression_for_free_variables<'a>(
     match exp {
         // No validation happens here, because it is handled later by codegen
         Expression::Form(args) => {
-            if let Some(arg0) = args.first()
-                && let Expression::Symbol(x) = arg0
-            {
-                if env.contains_key(x) {
-                    // this must be first to allow binding over lambda and let
-                    result.extend(scan_expressions_for_free_variables(args, env, parameters));
-                } else {
-                    match arg0 {
-                        Expression::Symbol(b"lambda") => {}
-                        Expression::Symbol(b"let") => {
-                            let mut new_parameters = parameters.clone();
-                            if let Some(Expression::Form(bindings)) = args.get(1) {
-                                for binding in bindings {
-                                    if let Expression::Form(binding_vec) = binding
-                                        && let [Expression::Symbol(k), v] = binding_vec.as_slice()
-                                    {
-                                        result.extend(scan_expression_for_free_variables(v, env, parameters /* not let*, so bindings can't use each other. */));
-                                        new_parameters.insert(k);
+            if let Some(arg0) = args.first() {
+                if let Expression::Symbol(x) = arg0 {
+                    if env.contains_key(x) {
+                        // this must be first to allow binding over lambda and let
+                        result.extend(scan_expressions_for_free_variables(args, env, parameters));
+                    } else {
+                        match arg0 {
+                            Expression::Symbol(b"lambda") => {
+                                let mut new_parameters = parameters.clone();
+                                if let Some(Expression::Form(inner_params)) = args.get(1) {
+                                    for inner_param in inner_params {
+                                        if let Expression::Symbol(inner_param_symbol) = inner_param
+                                        {
+                                            new_parameters.insert(inner_param_symbol);
+                                        }
                                     }
                                 }
+                                result.extend(scan_expressions_for_free_variables(
+                                    &args[2..],
+                                    env,
+                                    &new_parameters,
+                                ));
                             }
-                            // If any of the above checks fail, it's fine. codegen will catch it.
-                            result.extend(scan_expressions_for_free_variables(
-                                &args[2..],
-                                env,
-                                &new_parameters,
-                            ));
+                            Expression::Symbol(b"let") => {
+                                let mut new_parameters = parameters.clone();
+                                if let Some(Expression::Form(bindings)) = args.get(1) {
+                                    for binding in bindings {
+                                        if let Expression::Form(binding_vec) = binding
+                                            && let [Expression::Symbol(k), v] =
+                                                binding_vec.as_slice()
+                                        {
+                                            result.extend(scan_expression_for_free_variables(v, env, parameters /* not let*, so bindings can't use each other. */));
+                                            new_parameters.insert(k);
+                                        }
+                                    }
+                                }
+                                // If any of the above checks fail, it's fine. codegen will catch it.
+                                result.extend(scan_expressions_for_free_variables(
+                                    &args[2..],
+                                    env,
+                                    &new_parameters,
+                                ));
+                            }
+                            _ => result
+                                .extend(scan_expressions_for_free_variables(args, env, parameters)),
                         }
-                        _ => result
-                            .extend(scan_expressions_for_free_variables(args, env, parameters)),
                     }
+                } else {
+                    result.extend(scan_expressions_for_free_variables(args, env, parameters));
                 }
             }
         }
@@ -491,8 +509,11 @@ fn lower_lambda<'a>(
             *v += 1; // for arity + num_freevars, which is passed after the args
             *v += 1; // for retaddr
         }
-        let mut lambda_body =
-            lower_expressions(args, &lambda_env, instructions_emitted + result.len());
+        let mut lambda_body = lower_expressions(
+            args,
+            &lambda_env,
+            instructions_emitted + result.len() + 1, /* for JUMP */
+        );
         lambda_body.push("RETURN".to_owned());
         result.push(format!("JUMP {}", lambda_body.len()));
         result.append(&mut lambda_body);
@@ -595,12 +616,16 @@ fn lower_nary_primitive<'a>(
         args.len() == n,
         "incorrect argument count for {n}-ary primitive"
     );
+    let mut new_env = env.clone();
     for arg in args {
         result.append(&mut lower_expression(
             arg,
-            env,
+            &new_env,
             instructions_emitted + result.len(),
         ));
+        for v in new_env.values_mut() {
+            *v += 1;
+        }
     }
     result.push(mnemonic.to_owned());
     result
