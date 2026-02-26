@@ -290,14 +290,19 @@ fn lower_let<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    // is_tail: todo!(),
 ) -> Vec<String> {
     let mut result = Vec::new();
     let mut new_variables = HashSet::new();
-    let mut new_env = env.clone();
+    let mut binding_env = env.clone();
+    result.push("FRAME".to_owned());
+    for v in binding_env.values_mut() {
+        *v += 1; // for the frame
+    }
+    let mut new_env = binding_env.clone();
     if let Expression::Form(bindings) = args.remove(0) {
         let num_bindings = bindings.len();
-
-        for binding in bindings {
+        for (i, binding) in bindings.into_iter().enumerate() {
             if let Expression::Form(mut binding) = binding {
                 assert!(
                     binding.len() == 2,
@@ -315,8 +320,9 @@ fn lower_let<'a>(
                     new_env.insert(name, 0);
                     result.append(&mut lower_expression(
                         exp,
-                        env,
+                        &binding_env,
                         instructions_emitted + result.len(),
+                        i == num_bindings - 1,
                     ));
                 } else {
                     panic!("let binding args are not (Symbol, Expr)")
@@ -330,8 +336,9 @@ fn lower_let<'a>(
             args,
             &new_env,
             instructions_emitted + result.len(),
+            true, /* the last thing in a let is always last in its frame */
         ));
-        result.push(format!("FALL {num_bindings}"));
+        result.push("ENDFRAME".to_owned());
     } else {
         panic!("let bindings is not a form")
     }
@@ -426,16 +433,22 @@ fn lower_call<'a>(
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    is_tail: bool,
 ) -> Vec<String> {
     let mut result = Vec::new();
+    let mut new_env = env.clone();
+    result.push("FRAME".to_owned()); // we can't do this in call because the frame needs to include the args, which are pushed here.
+    for v in new_env.values_mut() {
+        *v += 1;
+    }
 
     let num_args = args.len();
-    let mut new_env = env.clone();
     for arg in args.into_iter().rev() {
         result.append(&mut lower_expression(
             arg,
             &new_env,
             instructions_emitted + result.len(),
+            false,
         ));
         for v in new_env.values_mut() {
             *v += 1;
@@ -445,17 +458,23 @@ fn lower_call<'a>(
         func,
         &new_env,
         instructions_emitted + result.len(),
+        false,
     ));
     for v in new_env.values_mut() {
         *v += 1;
     }
-    result.push(format!("LOAD {num_args} // arity").to_owned());
-    result.push("CALL".to_owned());
+    result.push(format!("LOAD {num_args} // call arity").to_owned());
+    if is_tail {
+        result.push("TAILCALL".to_owned());
+    } else {
+        result.push("CALL".to_owned());
+    }
     result
 }
 
 fn lower_lambda<'a>(
     mut args: Vec<Expression<'a>>,
+    lambda_name: Option<&'a [u8]>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
 ) -> Vec<String> {
@@ -482,7 +501,7 @@ fn lower_lambda<'a>(
             env,
             instructions_emitted + result.len(),
         ));
-        result.push(format!("LOAD {arity} // arity").to_owned());
+        result.push(format!("LOAD {arity} // lambda arity").to_owned());
         result.push(
             format!(
                 "LAMBDA {}",
@@ -506,13 +525,20 @@ fn lower_lambda<'a>(
             lambda_env.insert(f, 0);
         }
         for v in lambda_env.values_mut() {
-            *v += 1; // for arity + num_freevars, which is passed after the args
+            *v += 1; // for the lambda
+        }
+        if let Some(fn_name) = lambda_name {
+            lambda_env.insert(fn_name, 0);
+        }
+        for v in lambda_env.values_mut() {
             *v += 1; // for retaddr
         }
+
         let mut lambda_body = lower_expressions(
             args,
             &lambda_env,
             instructions_emitted + result.len() + 1, /* for JUMP */
+            true,
         );
         lambda_body.push("RETURN".to_owned());
         result.push(format!("JUMP {}", lambda_body.len()));
@@ -523,16 +549,29 @@ fn lower_lambda<'a>(
     }
 }
 
+fn lower_lambdarec<'a>(
+    mut args: Vec<Expression<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    instructions_emitted: usize,
+) -> Vec<String> {
+    if let Expression::Symbol(fn_name) = args.remove(0) {
+        lower_lambda(args, Some(fn_name), env, instructions_emitted)
+    } else {
+        panic!("Invalid lambdarec name")
+    }
+}
+
 fn lower_begin<'a>(
     args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    is_tail: bool,
 ) -> Vec<String> {
     if args.is_empty() {
         // Technically wrong; whether begin allows 0 args is context-dependent
         vec!["LOAD UNSPECIFIED".to_owned()]
     } else {
-        lower_expressions(args, env, instructions_emitted)
+        lower_expressions(args, env, instructions_emitted, is_tail)
     }
 }
 
@@ -540,6 +579,7 @@ fn lower_if<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    is_tail: bool,
 ) -> Vec<String> {
     let mut result = Vec::new();
     assert!(matches!(args.len(), 2 | 3), "Invalid argument count to if");
@@ -548,6 +588,7 @@ fn lower_if<'a>(
         args.remove(0),
         env,
         instructions_emitted + result.len(),
+        false,
     ));
     result.push("LOAD #f".to_owned());
     result.push("LOAD 2".to_owned());
@@ -558,6 +599,7 @@ fn lower_if<'a>(
         args.remove(0),
         env,
         instructions_emitted + result.len() + 1, /* for CJUMP */
+        is_tail,
     );
 
     // alternative
@@ -566,6 +608,7 @@ fn lower_if<'a>(
             alternative_code,
             env,
             instructions_emitted + result.len() + 1 /* for CJUMP */ + consequent_code.len() + 1, /* for JUMP */
+            is_tail,
         )
     } else {
         vec!["LOAD UNSPECIFIED".to_owned()]
@@ -592,6 +635,7 @@ fn lower_list<'a>(
             arg,
             &new_env,
             instructions_emitted + result.len(),
+            false,
         ));
         for v in new_env.values_mut() {
             *v += 1;
@@ -622,6 +666,7 @@ fn lower_nary_primitive<'a>(
             arg,
             &new_env,
             instructions_emitted + result.len(),
+            false,
         ));
         for v in new_env.values_mut() {
             *v += 1;
@@ -650,12 +695,13 @@ fn lower_variadic_primitive<'a>(
             arg,
             &new_env,
             instructions_emitted + result.len(),
+            false,
         ));
         for v in new_env.values_mut() {
             *v += 1;
         }
     }
-    result.push(format!("LOAD {num_args} // arity"));
+    result.push(format!("LOAD {num_args} // primitive arity"));
     result.push(mnemonic.to_string());
     result
 }
@@ -664,17 +710,27 @@ fn lower_form<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    is_tail: bool,
 ) -> Vec<String> {
     assert!(!args.is_empty(), "Empty form!");
     let arg_0 = args.remove(0);
     if let Expression::Symbol(name) = arg_0 {
         if env.contains_key(name) {
-            lower_call(Expression::Symbol(name), args, env, instructions_emitted)
+            lower_call(
+                Expression::Symbol(name),
+                args,
+                env,
+                instructions_emitted,
+                is_tail,
+            )
         } else {
             match name {
-                b"begin" => lower_begin(args, env, instructions_emitted),
+                b"begin" => lower_begin(args, env, instructions_emitted, is_tail),
+                b"lambdarec" => lower_lambdarec(args, env, instructions_emitted),
                 b"let" => lower_let(args, env, instructions_emitted),
-                b"if" => lower_if(args, env, instructions_emitted),
+                b"if" => lower_if(args, env, instructions_emitted, is_tail),
+                b"list" => lower_list(args, env, instructions_emitted),
+                b"lambda" => lower_lambda(args, None, env, instructions_emitted),
                 b"add1" => lower_nary_primitive("ADD1", 1, args, env, instructions_emitted),
                 b"sub1" => lower_nary_primitive("SUB1", 1, args, env, instructions_emitted),
                 b"zero?" => lower_nary_primitive("ZEROP", 1, args, env, instructions_emitted),
@@ -718,13 +774,11 @@ fn lower_form<'a>(
                 b"cons" => lower_nary_primitive("CONS", 2, args, env, instructions_emitted),
                 b"car" => lower_nary_primitive("CAR", 1, args, env, instructions_emitted),
                 b"cdr" => lower_nary_primitive("CDR", 1, args, env, instructions_emitted),
-                b"list" => lower_list(args, env, instructions_emitted),
-                b"lambda" => lower_lambda(args, env, instructions_emitted),
                 _ => panic!("Cannot resolve symbol '{name:?}'"),
             }
         }
     } else {
-        lower_call(arg_0, args, env, instructions_emitted)
+        lower_call(arg_0, args, env, instructions_emitted, is_tail)
     }
 }
 
@@ -732,12 +786,13 @@ fn lower_expression<'a>(
     exp: Expression<'a>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    is_tail: bool,
 ) -> Vec<String> {
     match exp {
         Expression::Int(x) => vec!["LOAD ".to_owned() + &x.to_string()],
         Expression::Char(x) => vec![format!("LOAD #\\x{x:x}")],
         Expression::Bool(x) => vec!["LOAD ".to_owned() + if x { "#t" } else { "#f" }],
-        Expression::Form(args) => lower_form(args, env, instructions_emitted),
+        Expression::Form(args) => lower_form(args, env, instructions_emitted, is_tail),
         Expression::Null => vec!["LOAD NULL".to_owned()],
         Expression::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
@@ -763,36 +818,46 @@ fn lower_expressions<'a>(
     exps: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
+    is_tail: bool,
 ) -> Vec<String> {
-    let mut result = Vec::new();
-    let num_exps = exps.len();
-    for (i, exp) in exps.into_iter().enumerate() {
-        result.append(&mut lower_expression(
-            exp,
-            env,
-            instructions_emitted + result.len(),
-        ));
-        if i != num_exps - 1 {
-            result.push("FORGET".to_owned());
+    if exps.is_empty() {
+        vec!["LOAD UNSPECIFIED".to_owned()]
+    } else {
+        let mut result = Vec::new();
+        let num_exps = exps.len();
+        for (i, exp) in exps.into_iter().enumerate() {
+            let is_last = i == num_exps - 1;
+            result.append(&mut lower_expression(
+                exp,
+                env,
+                instructions_emitted + result.len(),
+                is_tail && is_last,
+            ));
+            if !is_last {
+                result.push("FORGET".to_owned());
+            }
         }
+        result
     }
-    result
 }
 
 fn compile_all(input_slice: &[u8]) -> Vec<String> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
-    // dbg!(&ast);
     assert!(
         input_slice.is_empty(),
         "Parsing failed. Leftover data: {input_slice:?}"
     );
-    lower_expressions(ast, &HashMap::new(), 0)
+    lower_expressions(ast, &HashMap::new(), 0, false)
 }
 
 fn main() {
     let mut input_vec = Vec::new();
+    input_vec.extend_from_slice(b"((lambda () ");
     let _bytes_read = stdin().read_to_end(&mut input_vec);
-    println!("{}", compile_all(&input_vec[..]).join("\n"));
+    input_vec.extend_from_slice(b"))");
+    let mut user_code = compile_all(&input_vec[..]);
+    user_code.push("DONE".to_owned());
+    println!("{}", user_code.join("\n"));
 }
 
 #[test]

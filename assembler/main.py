@@ -137,9 +137,10 @@ def main() -> None:
                 opcode = 0x170C000
             case ["CHARTOINT"]:
                 opcode = 0xC701000
-            case ["FALL", v]:
+            case ["ENDFRAME"]:
                 opcode = 0xFA11000
-                immediate = int(v).to_bytes(8, "little")
+            case ["FRAME"]:
+                opcode = 0x57AC000
             case ["CONS"]:
                 opcode = 0xC0C0000
             case ["CAR"]:
@@ -151,12 +152,15 @@ def main() -> None:
                 immediate = int(v).to_bytes(8, "little")
             case ["CALL"]:
                 opcode = 0xCA11000
+            case ["TAILCALL"]:
+                opcode = 0x7A11000
             case ["RETURN"]:
                 opcode = 0xDB22000
+            case ["DONE"]:
+                opcode = 0xD0D0000
             case _:
                 raise ValueError(f"Couldn't parse line {line}")
         os.write(1, opcode.to_bytes(8, "little") + immediate)
-    os.write(1, 0xD0D0000.to_bytes(8, "little") + DEFAULT_IMMEDIATE)
 
 
 if __name__ == "__main__":

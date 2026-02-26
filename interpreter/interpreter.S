@@ -5,7 +5,7 @@
 #define vm_pc rsp
 #define vm_sp rbx
 #define vm_hp rbp
-#define stack_slots_used r12
+#define vm_fp r12
 #define code_base r13
 
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
@@ -25,8 +25,7 @@
 // Needs to preserve flags
 #define PUSH(X) \
     lea vm_sp, [vm_sp - STACK_SLOT_SIZE] ; \
-    mov qword ptr [vm_sp], X ; \
-    lea stack_slots_used, [stack_slots_used + 1]
+    mov qword ptr [vm_sp], X
 
 #define GET_IMMEDIATE(R64) \
     pop R64
@@ -36,36 +35,16 @@
 
 // Needs to preserve flags
 #define POP(X) \
-    xchg rsp, vm_hp ; \
-    pushf ; \
-    test stack_slots_used, stack_slots_used ; \
-    je stack_underflow ; \
     mov X, qword ptr [vm_sp] ; \
-    add vm_sp, STACK_SLOT_SIZE ; \
-    dec stack_slots_used ; \
-    popf ; \
-    xchg rsp, vm_hp
+    lea vm_sp, [vm_sp + STACK_SLOT_SIZE]
 
 // Needs to preserve flags
 #define DROP \
-    xchg rsp, vm_hp ; \
-    pushf ; \
-    test stack_slots_used, stack_slots_used ; \
-    je stack_underflow ; \
-    add vm_sp, STACK_SLOT_SIZE ; \
-    dec stack_slots_used ; \
-    popf ; \
-    xchg rsp, vm_hp
+    lea vm_sp, [vm_sp + STACK_SLOT_SIZE]
 
 // Needs to preserve flags
 #define PEEK(X, I) \
-    xchg rsp, vm_hp ; \
-    pushf ; \
-    cmp I, stack_slots_used ; \
-    jae stack_underflow ; \
-    mov X, qword ptr [vm_sp + I * STACK_SLOT_SIZE] ; \
-    popf ; \
-    xchg rsp, vm_hp
+    mov X, qword ptr [vm_sp + I * STACK_SLOT_SIZE]
 
 #define JMP_IF_NULL(R64, LABEL) \
     cmp R64, TAGGED_NULL ; \
@@ -196,7 +175,7 @@ interpret:
     mov vm_hp, rsp   // vm heap pointer
     mov vm_pc, rdi   // vm instruction pointer
     mov vm_sp, rsi   // vm stack pointer
-    xor stack_slots_used, stack_slots_used // 0 stack slots are in use
+    xor vm_fp, vm_fp // vm frame pointer
     mov code_base, vm_pc // code_base
     ret
 
@@ -335,7 +314,7 @@ lt:
     ud2
 
 .section .text.eq
-.global eq 
+.global eq
 eq:
     SKIP_IMMEDIATE
     UNPACK(INT, rdi, 2f) // arity
@@ -526,27 +505,8 @@ cjump:
 .global get
 get:
     GET_IMMEDIATE(rax) // The offset from the sp to get
-    cmp rax, stack_slots_used
-    jae 1f
     mov rax, qword ptr [vm_sp + rax * STACK_SLOT_SIZE]
     PUSH(rax)
-    ret
-1:
-    ud2 // Stack access out of range
-
-.section .text.fall
-.global fall
-fall:
-    GET_IMMEDIATE(rdi) // amount to fall
-1:
-    test rdi, rdi
-    je 1f
-    POP(rax)
-    DROP
-    PUSH(rax)
-    dec rdi
-    jmp 1b
-1:
     ret
 
 .section .text.forget
@@ -826,13 +786,17 @@ vectorappend:
 2:
     ud2
 
+.section .text.tailcall
+.global tailcall
+tailcall:
+    jmp call
 
 .section .text.call
 .global call
 call:
     SKIP_IMMEDIATE
-    UNPACK(INT, rdi, 1f) // arity
-    UNPACK(LAMBDA, rax, 1f) // lambda
+    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdi, rdx
     jne 2f // arity mismatch
@@ -849,28 +813,26 @@ call:
     jmp 1b
 
 1:
-    add rdi, qword ptr [rdx]  // arity + num_freevars
-    PUSH(rdi)
-    mov rdi, vm_pc // retaddr
-    PUSH(rdi) // cannot directly push vm_pc because PUSH uses rsp internally
+    mov rdi, rax
+    PACK(LAMBDA, rdi) // the lambda
+    PUSH(vm_pc) // retaddr
     mov vm_pc, qword ptr [rax] // code offset
     shl vm_pc, 4
     add vm_pc, code_base
 
     // the stack now looks like this:
+    // saved vm_fp    <----- vm_fp
     // arg N
     // ...
     // arg 0
     // freevar N
     // ...
     // freevar 0
-    // arity + num_freevars
-    // retaddr
-
+    // lambda
+    // retaddr        <----- vm_sp
     ret
 2:
     ud2
-
 
 .section .text.lambda
 .global lambda
@@ -893,32 +855,41 @@ lambda:
 return:
     SKIP_IMMEDIATE
     POP(rdx) // retval
-    POP(rax) // retaddr
-    mov vm_pc, rax // can't use in POP because it uses rsp internally
-    POP(rcx) // arity + num_freevars
-    
+    POP(vm_pc) // retaddr
+
+    mov vm_sp, vm_fp
+    POP(vm_fp)
+    PUSH(rdx)
+    ret
 1:
-    test rcx, rcx
-    je 1f
-    DROP
-    dec rcx
-    jmp 1b
-1:
+    ud2
+
+.section .text.frame
+.global frame
+frame:
+    SKIP_IMMEDIATE
+    PUSH(vm_fp)
+    mov vm_fp, vm_sp
+    ret
+
+.section .text.endframe
+.global endframe
+endframe:
+    SKIP_IMMEDIATE
+    POP(rdx)
+    mov vm_sp, vm_fp
+    POP(vm_fp)
     PUSH(rdx)
     ret
 
 .section .text.done
 .global done
 done:
-    test stack_slots_used, stack_slots_used
-    jne 1f
-    PUSH(UNSPECIFIED)
-1:
-    cmp stack_slots_used, 1
-    jne 1f
+    test vm_fp, vm_fp
+    jne 2f // not in the base frame
     mov rdi, qword ptr [vm_sp] // Grab what's on top of the stack
     xchg rsp, vm_hp          // Put the stack back
     and rsp, -16             // Align the stack for a real function call
     call print_value_and_exit  // Call back into C
-1:
-    ud2 // more than one thing left on the stack
+2:
+    ud2

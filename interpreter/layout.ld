@@ -4,8 +4,8 @@ SECTIONS {
     }
 
     . = 0xfa11000;
-    .text.fall : {
-        *(fall)
+    .text.endframe : {
+        *(endframe)
     }
 
     . = 0x3e3e000;
@@ -183,8 +183,18 @@ SECTIONS {
         *(call)
     }
 
+    . = 0x7a11000;
+    .text.tailcall : {
+        *(tailcall)
+    }
+
     . = 0xdb22000;
     .text.return : {
         *(return)
+    }
+
+    . = 0x57ac000;
+    .text.frame : {
+        *(frame)
     }
 }
