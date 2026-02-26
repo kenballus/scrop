@@ -290,59 +290,38 @@ fn lower_let<'a>(
     mut args: Vec<Expression<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
-    // is_tail: todo!(),
+    is_tail: bool,
 ) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut new_variables = HashSet::new();
-    let mut binding_env = env.clone();
-    result.push("FRAME".to_owned());
-    for v in binding_env.values_mut() {
-        *v += 1; // for the frame
-    }
-    let mut new_env = binding_env.clone();
     if let Expression::Form(bindings) = args.remove(0) {
-        let num_bindings = bindings.len();
-        for (i, binding) in bindings.into_iter().enumerate() {
+        let mut binding_names = Vec::new();
+        let mut binding_exps = Vec::new();
+        for binding in bindings {
             if let Expression::Form(mut binding) = binding {
                 assert!(
                     binding.len() == 2,
                     "let binding has incorrect argument count."
                 );
-                if let (Expression::Symbol(name), exp) = (binding.remove(0), binding.remove(0)) {
-                    assert!(
-                        !new_variables.contains(name),
-                        "Duplicate key in let binding"
-                    );
-                    new_variables.insert(name);
-                    for v in new_env.values_mut() {
-                        *v += 1;
-                    }
-                    new_env.insert(name, 0);
-                    result.append(&mut lower_expression(
-                        exp,
-                        &binding_env,
-                        instructions_emitted + result.len(),
-                        i == num_bindings - 1,
-                    ));
-                } else {
-                    panic!("let binding args are not (Symbol, Expr)")
-                }
+                binding_exps.push(binding.pop().unwrap());
+                binding_names.push(binding.pop().unwrap());
             } else {
                 panic!("let binding is not a form")
             }
         }
-
-        result.append(&mut lower_expressions(
-            args,
-            &new_env,
-            instructions_emitted + result.len(),
-            true, /* the last thing in a let is always last in its frame */
-        ));
-        result.push("ENDFRAME".to_owned());
+        let mut lambda = vec![
+            Expression::Symbol(b"lambda"),
+            Expression::Form(binding_names),
+        ];
+        lambda.append(&mut args);
+        lower_call(
+            Expression::Form(lambda),
+            binding_exps,
+            env,
+            instructions_emitted,
+            is_tail,
+        )
     } else {
         panic!("let bindings is not a form")
     }
-    result
 }
 
 fn scan_expression_for_free_variables<'a>(
@@ -485,7 +464,7 @@ fn lower_lambda<'a>(
         let arity = parameters.len();
         for parameter in parameters {
             if let Expression::Symbol(x) = parameter {
-                parameter_set.insert(x);
+                assert!(parameter_set.insert(x), "Duplicate argument in lambda");
                 parameter_names.push(x);
             } else {
                 panic!("lambda parameter is not a symbol");
@@ -727,7 +706,7 @@ fn lower_form<'a>(
             match name {
                 b"begin" => lower_begin(args, env, instructions_emitted, is_tail),
                 b"lambdarec" => lower_lambdarec(args, env, instructions_emitted),
-                b"let" => lower_let(args, env, instructions_emitted),
+                b"let" => lower_let(args, env, instructions_emitted, is_tail),
                 b"if" => lower_if(args, env, instructions_emitted, is_tail),
                 b"list" => lower_list(args, env, instructions_emitted),
                 b"lambda" => lower_lambda(args, None, env, instructions_emitted),
@@ -841,12 +820,16 @@ fn lower_expressions<'a>(
     }
 }
 
-fn compile_all(input_slice: &[u8]) -> Vec<String> {
+fn parse(input_slice: &[u8]) -> Vec<Expression<'_>> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
     assert!(
         input_slice.is_empty(),
         "Parsing failed. Leftover data: {input_slice:?}"
     );
+    ast
+}
+
+fn codegen(ast: Vec<Expression>) -> Vec<String> {
     lower_expressions(ast, &HashMap::new(), 0, false)
 }
 
@@ -855,7 +838,7 @@ fn main() {
     input_vec.extend_from_slice(b"((lambda () ");
     let _bytes_read = stdin().read_to_end(&mut input_vec);
     input_vec.extend_from_slice(b"))");
-    let mut user_code = compile_all(&input_vec[..]);
+    let mut user_code = codegen(parse(input_vec.as_slice()));
     user_code.push("DONE".to_owned());
     println!("{}", user_code.join("\n"));
 }
@@ -863,83 +846,83 @@ fn main() {
 #[test]
 #[should_panic(expected = "let bindings is not a form")]
 fn invalid_let_binding_list() {
-    compile_all(b"(let 1 1)");
+    codegen(parse(b"(let 1 1)"));
 }
 
 #[test]
 #[should_panic(expected = "let binding is not a form")]
 fn invalid_let_binding_list_entry() {
-    compile_all(b"(let (1) 1)");
+    codegen(parse(b"(let (1) 1)"));
 }
 
 #[test]
 #[should_panic(expected = "let binding has incorrect argument count.")]
 fn let_binding_too_many_args() {
-    compile_all(b"(let ((x 1 1)) x)");
+    codegen(parse(b"(let ((x 1 1)) x)"));
 }
 
 #[test]
-#[should_panic(expected = "Duplicate key in let binding")]
+#[should_panic(expected = "Duplicate argument in lambda")]
 fn let_binding_duplicate_key() {
-    compile_all(b"(let ((x 1) (x 1)) x)");
+    codegen(parse(b"(let ((x 1) (x 1)) x)"));
 }
 
 #[test]
 #[should_panic(expected = "let binding is not a form")]
 fn let_binding_list_not_nested() {
-    compile_all(b"(let (x 1) x)");
+    codegen(parse(b"(let (x 1) x)"));
 }
 
 #[test]
 #[should_panic(expected = "Invalid argument count to if")]
 fn too_few_if_args() {
-    compile_all(b"(if)");
+    codegen(parse(b"(if)"));
 }
 
 #[test]
 #[should_panic(expected = "Invalid argument count to if")]
 fn too_many_if_args() {
-    compile_all(b"(if 1 2 3 4)");
+    codegen(parse(b"(if 1 2 3 4)"));
 }
 
 #[test]
 #[should_panic(expected = "Parsing failed. Leftover data: [93]")]
 fn leftover_data() {
-    compile_all(b"]");
+    codegen(parse(b"]"));
 }
 
 #[test]
 #[should_panic(expected = "incorrect argument count for 1-ary primitive")]
 fn too_few_unary_args() {
-    compile_all(b"(not)");
+    codegen(parse(b"(not)"));
 }
 
 #[test]
 #[should_panic(expected = "incorrect argument count for 1-ary primitive")]
 fn too_many_unary_args() {
-    compile_all(b"(not 1 2)");
+    codegen(parse(b"(not 1 2)"));
 }
 
 #[test]
 #[should_panic(expected = "Too few arguments provided to variadic primitive")]
 fn too_few_variadic_args() {
-    compile_all(b"(-)");
+    codegen(parse(b"(-)"));
 }
 
 #[test]
 #[should_panic(expected = "Couldn't find environment entry for \"a\"")]
 fn use_undefined_variable() {
-    compile_all(b"a");
+    codegen(parse(b"a"));
 }
 
 #[test]
 #[should_panic(expected = "Parsing failed. Leftover data: [35, 124, 32, 35, 124, 32, 124, 35]")]
 fn mismatched_nested_comment() {
-    compile_all(b"#| #| |#");
+    codegen(parse(b"#| #| |#"));
 }
 
 #[test]
-#[should_panic(expected = "let binding args are not (Symbol, Expr)")]
+#[should_panic(expected = "lambda parameter is not a symbol")]
 fn numeric_symbol() {
-    compile_all(b"(let ((1 0)) 1)");
+    codegen(parse(b"(let ((1 0)) 1)"));
 }

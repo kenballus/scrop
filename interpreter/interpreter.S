@@ -789,7 +789,45 @@ vectorappend:
 .section .text.tailcall
 .global tailcall
 tailcall:
-    jmp call
+    SKIP_IMMEDIATE
+    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(LAMBDA, rax, 2f) // lambda
+    mov rdx, qword ptr [rax + 16] // arity
+    cmp rdi, rdx
+    jne 2f // arity mismatch
+    mov rdx, qword ptr [rax + 8] // freevar vector
+
+    // unpack freevars to stack
+    mov rcx, qword ptr [rdx] // vector length
+1:
+    test rcx, rcx
+    je 1f
+    mov rsi, qword ptr [rdx + rcx * 8]
+    PUSH(rsi)
+    dec rcx
+    jmp 1b
+
+1:
+    mov rdi, rax
+    PACK(LAMBDA, rdi) // the lambda
+    PUSH(vm_pc) // retaddr
+    mov vm_pc, qword ptr [rax] // code offset
+    shl vm_pc, 4
+    add vm_pc, code_base
+
+    // the stack now looks like this:
+    // saved vm_fp    <----- vm_fp
+    // arg N
+    // ...
+    // arg 0
+    // freevar N
+    // ...
+    // freevar 0
+    // lambda
+    // retaddr        <----- vm_sp
+    ret
+2:
+    ud2
 
 .section .text.call
 .global call
