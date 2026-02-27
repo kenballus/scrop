@@ -416,9 +416,11 @@ fn lower_call<'a>(
 ) -> Vec<String> {
     let mut result = Vec::new();
     let mut new_env = env.clone();
-    result.push("FRAME".to_owned()); // we can't do this in call because the frame needs to include the args, which are pushed here.
-    for v in new_env.values_mut() {
-        *v += 1;
+    if !is_tail {
+        result.push("FRAME".to_owned());
+        for v in new_env.values_mut() {
+            *v += 1;
+        }
     }
 
     let num_args = args.len();
@@ -510,7 +512,7 @@ fn lower_lambda<'a>(
             lambda_env.insert(fn_name, 0);
         }
         for v in lambda_env.values_mut() {
-            *v += 1; // for retaddr
+            *v += 1; // for lr
         }
 
         let mut lambda_body = lower_expressions(

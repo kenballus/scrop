@@ -6,7 +6,9 @@
 #define vm_sp rbx
 #define vm_hp rbp
 #define vm_fp r12
-#define code_base r13
+#define vm_lr r13
+
+#define code_base r15
 
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
 // Each opcode is simply the address of its implementation.
@@ -176,6 +178,7 @@ interpret:
     mov vm_pc, rdi   // vm instruction pointer
     mov vm_sp, rsi   // vm stack pointer
     xor vm_fp, vm_fp // vm frame pointer
+    xor vm_lr, vm_lr // vm frame pointer
     mov code_base, vm_pc // code_base
     ret
 
@@ -789,15 +792,51 @@ vectorappend:
 .section .text.tailcall
 .global tailcall
 tailcall:
+    // saved vm_fp <----- vm_fp
+    // prev locals
+    // prev lambda
+    // saved lr
+    // args
+    // lambda
+    // arity       <----- vm_sp
+
     SKIP_IMMEDIATE
     UNPACK(INT, rdi, 2f) // arity
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdi, rdx
     jne 2f // arity mismatch
-    mov rdx, qword ptr [rax + 8] // freevar vector
+
+    // saved vm_fp <----- vm_fp
+    // prev locals
+    // prev lambda
+    // saved lr
+    // args        <----- vm_sp
+
+    mov r8, qword ptr [vm_sp + rdx * STACK_SLOT_SIZE] // saved lr
+    mov rcx, rdx // arity
+1:
+    test rcx, rcx
+    je 1f
+    mov rdi, qword ptr [vm_sp + rcx * STACK_SLOT_SIZE - STACK_SLOT_SIZE]
+    mov rsi, rdx
+    sub rsi, rcx
+    inc rsi
+    shl rsi, 3
+    neg rsi
+    add rsi, vm_fp
+    mov qword ptr [rsi], rdi
+    dec rcx
+    jmp 1b
+1:
+    neg rdx
+    lea vm_sp, [vm_fp + rdx * STACK_SLOT_SIZE]
+    neg rdx
+    // saved vm_fp <----- vm_fp
+    // args        <----- vm_sp
 
     // unpack freevars to stack
+    mov rdx, qword ptr [rax + 8] // freevar vector
     mov rcx, qword ptr [rdx] // vector length
 1:
     test rcx, rcx
@@ -806,25 +845,14 @@ tailcall:
     PUSH(rsi)
     dec rcx
     jmp 1b
-
 1:
     mov rdi, rax
     PACK(LAMBDA, rdi) // the lambda
-    PUSH(vm_pc) // retaddr
+    PUSH(r8) // lr from the caller's frame
     mov vm_pc, qword ptr [rax] // code offset
     shl vm_pc, 4
     add vm_pc, code_base
 
-    // the stack now looks like this:
-    // saved vm_fp    <----- vm_fp
-    // arg N
-    // ...
-    // arg 0
-    // freevar N
-    // ...
-    // freevar 0
-    // lambda
-    // retaddr        <----- vm_sp
     ret
 2:
     ud2
@@ -838,9 +866,9 @@ call:
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdi, rdx
     jne 2f // arity mismatch
-    mov rdx, qword ptr [rax + 8] // freevar vector
 
     // unpack freevars to stack
+    mov rdx, qword ptr [rax + 8] // freevar vector
     mov rcx, qword ptr [rdx] // vector length
 1:
     test rcx, rcx
@@ -853,7 +881,8 @@ call:
 1:
     mov rdi, rax
     PACK(LAMBDA, rdi) // the lambda
-    PUSH(vm_pc) // retaddr
+    PUSH(vm_lr)
+    mov vm_lr, vm_pc
     mov vm_pc, qword ptr [rax] // code offset
     shl vm_pc, 4
     add vm_pc, code_base
@@ -867,7 +896,7 @@ call:
     // ...
     // freevar 0
     // lambda
-    // retaddr        <----- vm_sp
+    // saved vm_lr    <----- vm_sp
     ret
 2:
     ud2
@@ -893,7 +922,8 @@ lambda:
 return:
     SKIP_IMMEDIATE
     POP(rdx) // retval
-    POP(vm_pc) // retaddr
+    mov vm_pc, vm_lr
+    POP(vm_lr) // lr
 
     mov vm_sp, vm_fp
     POP(vm_fp)
@@ -910,23 +940,13 @@ frame:
     mov vm_fp, vm_sp
     ret
 
-.section .text.endframe
-.global endframe
-endframe:
-    SKIP_IMMEDIATE
-    POP(rdx)
-    mov vm_sp, vm_fp
-    POP(vm_fp)
-    PUSH(rdx)
-    ret
-
 .section .text.done
 .global done
 done:
     test vm_fp, vm_fp
     jne 2f // not in the base frame
     mov rdi, qword ptr [vm_sp] // Grab what's on top of the stack
-    xchg rsp, vm_hp          // Put the stack back
+    mov rsp, vm_hp          // Put the stack back
     and rsp, -16             // Align the stack for a real function call
     call print_value_and_exit  // Call back into C
 2:

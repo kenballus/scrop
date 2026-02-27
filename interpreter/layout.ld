@@ -3,11 +3,6 @@ SECTIONS {
     .text : {
     }
 
-    . = 0xfa11000;
-    .text.endframe : {
-        *(endframe)
-    }
-
     . = 0x3e3e000;
     .text.eqp : {
         *(eqp)

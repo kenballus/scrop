@@ -137,8 +137,6 @@ def main() -> None:
                 opcode = 0x170C000
             case ["CHARTOINT"]:
                 opcode = 0xC701000
-            case ["ENDFRAME"]:
-                opcode = 0xFA11000
             case ["FRAME"]:
                 opcode = 0x57AC000
             case ["CONS"]:
