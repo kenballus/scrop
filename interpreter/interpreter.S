@@ -821,11 +821,8 @@ tailcall:
     mov rdi, qword ptr [vm_sp + rcx * STACK_SLOT_SIZE - STACK_SLOT_SIZE]
     mov rsi, rdx
     sub rsi, rcx
-    inc rsi
-    shl rsi, 3
     neg rsi
-    add rsi, vm_fp
-    mov qword ptr [rsi], rdi
+    mov qword ptr [rsi * STACK_SLOT_SIZE + vm_fp - STACK_SLOT_SIZE], rdi
     dec rcx
     jmp 1b
 1:
