@@ -837,7 +837,22 @@ fn codegen(ast: Vec<Expression>) -> Vec<String> {
 
 fn main() {
     let mut input_vec = Vec::new();
-    input_vec.extend_from_slice(b"((lambda () ");
+    input_vec.extend_from_slice(
+        b"(let (
+            (reverse
+                (lambda (l)
+                    ((lambdarec reverse-tail (l acc)
+                        (if (null? l)
+                            acc
+                            (reverse-tail (cdr l) (cons (car l) acc)))) l '()))))
+                (let (
+                    (map
+                    (lambda (f l)
+                        (reverse ((lambdarec map-tail (f l acc)
+                            (if (null? l)
+                                acc
+                                (map-tail f (cdr l) (cons (f (car l)) acc)))) f l '())))))",
+    );
     let _bytes_read = stdin().read_to_end(&mut input_vec);
     input_vec.extend_from_slice(b"))");
     let mut user_code = codegen(parse(input_vec.as_slice()));
