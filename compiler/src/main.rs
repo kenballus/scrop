@@ -940,6 +940,13 @@ fn lower_form<'a>(
         } else {
             match name {
                 b"begin" => lower_expressions(args, env, instructions_emitted, is_tail),
+                b"apply" => lower_nary_primitive(
+                    if is_tail { "APPLY" } else { "TAILAPPLY" },
+                    2,
+                    args,
+                    env,
+                    instructions_emitted,
+                ),
                 b"lambdarec" => lower_lambdarec(args, env, instructions_emitted),
                 b"let" => lower_let(args, env, instructions_emitted, is_tail),
                 b"let*" => lower_letstar(args, env, instructions_emitted, is_tail),

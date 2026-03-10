@@ -3,6 +3,16 @@ SECTIONS {
     .text : {
     }
 
+    . = 0xa991000;
+    .text.apply : {
+        *(apply)
+    }
+
+    . = 0x7991000;
+    .text.tailapply : {
+        *(tailapply)
+    }
+
     . = 0x3e3e000;
     .text.eqp : {
         *(eqp)

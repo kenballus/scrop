@@ -89,10 +89,10 @@ def main() -> None:
                 immediate = int(v).to_bytes(8, "little")
             case ["FORGET"]:
                 opcode = 0x49E7000
-            case ["ADD1"]:
-                opcode = 0xADD1000
-            case ["SUB1"]:
-                opcode = 0x50B1000
+            case ["APPLY"]:
+                opcode = 0xA991000
+            case ["TAILAPPLY"]:
+                opcode = 0x7991000
             case ["ADD"]:
                 opcode = 0x0ADD000
             case ["SUB"]:

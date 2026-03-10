@@ -84,6 +84,13 @@
     POP(R64) ; \
     je LABEL
 
+#define JMP_IF_NOT_PAIR(R64, LABEL) \
+    PUSH(R64) ; \
+    and R64, PAIR_MASK ; \
+    cmp R64, PAIR_SUFFIX ; \
+    POP(R64) ; \
+    jne LABEL
+
 #define JMP_IF_NOT_STRING(R64, LABEL) \
     PUSH(R64) ; \
     and R64, STRING_MASK ; \
@@ -779,6 +786,7 @@ tailcall:
     // arity       <----- vm_sp
 
     SKIP_IMMEDIATE
+.Ltailappcall:
     UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
@@ -862,6 +870,7 @@ tailcall:
 .global call
 call:
     SKIP_IMMEDIATE
+.Lappcall:
     UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
@@ -926,6 +935,60 @@ call:
     // lambda
     // saved vm_lr    <----- vm_sp
     ret
+2:
+    ud2
+
+.section .text.apply
+.global apply
+apply:
+    SKIP_IMMEDIATE
+    POP(rcx)
+    UNPACK(LAMBDA, rax, 2f) // the lambda
+    PUSH(vm_fp)
+    mov vm_fp, vm_sp
+    PUSH(rcx)
+    xor ecx, ecx
+1:
+    cmp qword ptr [vm_sp], TAGGED_NULL
+    je 1f
+    UNPACK(PAIR, rsi, 2f)
+    mov rdi, qword ptr [rsi]
+    mov rsi, qword ptr [rsi + 8]
+    PUSH(rdi)
+    PUSH(rsi)
+    inc rcx
+    jmp 1b
+1:
+    DROP
+    PACK(LAMBDA, rax)
+    PACK(INT, rcx)
+    jmp .Lappcall
+2:
+    ud2
+
+.section .text.tailapply
+.global tailapply
+tailapply:
+    SKIP_IMMEDIATE
+    POP(rcx)
+    UNPACK(LAMBDA, rax, 2f) // the lambda
+    PUSH(rcx)
+    xor ecx, ecx
+1:
+    cmp qword ptr [vm_sp], TAGGED_NULL
+    je 1f
+    UNPACK(PAIR, rsi, 2f)
+    mov rdi, qword ptr [rsi]
+    mov rsi, qword ptr [rsi + 8]
+    PUSH(rdi)
+    PUSH(rsi)
+    inc rcx
+    jmp 1b
+1:
+    DROP
+    PACK(LAMBDA, rax)
+    PACK(INT, rcx)
+    jmp .Ltailappcall
 2:
     ud2
 
