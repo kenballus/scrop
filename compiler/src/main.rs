@@ -474,6 +474,31 @@ fn lower_let<'a>(
     }
 }
 
+fn lower_letstar<'a>(
+    mut args: Vec<Token<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    instructions_emitted: usize,
+    is_tail: bool,
+) -> Vec<String> {
+    if let Token::Form(mut bindings) = args.remove(0) {
+        if bindings.is_empty() {
+            lower_expressions(args, env, instructions_emitted, is_tail)
+        } else {
+            let first_binding = bindings.remove(0);
+            let mut letstar_exp = vec![Token::Symbol(b"let*"), Token::Form(bindings)];
+            letstar_exp.append(&mut args);
+            lower_let(
+                vec![Token::Form(vec![first_binding]), Token::Form(letstar_exp)],
+                env,
+                instructions_emitted,
+                is_tail,
+            )
+        }
+    } else {
+        panic!("let* bindings is not a form")
+    }
+}
+
 fn scan_expression_for_free_variables<'a>(
     exp: &Token<'a>,
     env: &HashMap<&'a [u8], usize>,
@@ -513,6 +538,31 @@ fn scan_expression_for_free_variables<'a>(
                                             && let [Token::Symbol(k), v] = binding_vec.as_slice()
                                         {
                                             result.extend(scan_expression_for_free_variables(v, env, parameters /* not let*, so bindings can't use each other. */));
+                                            new_parameters.insert(k);
+                                        }
+                                    }
+                                }
+                                // If any of the above checks fail, it's fine. codegen will catch it.
+                                result.extend(scan_expressions_for_free_variables(
+                                    &args[2..],
+                                    env,
+                                    &new_parameters,
+                                ));
+                            }
+                            Token::Symbol(b"let*") => {
+                                let mut new_parameters = parameters.clone();
+                                if let Some(Token::Form(bindings)) = args.get(1) {
+                                    for binding in bindings {
+                                        let mut parameters = parameters.clone();
+                                        parameters.extend(new_parameters.clone());
+                                        if let Token::Form(binding_vec) = binding
+                                            && let [Token::Symbol(k), v] = binding_vec.as_slice()
+                                        {
+                                            result.extend(scan_expression_for_free_variables(
+                                                v,
+                                                env,
+                                                &parameters,
+                                            ));
                                             new_parameters.insert(k);
                                         }
                                     }
@@ -892,6 +942,7 @@ fn lower_form<'a>(
                 b"begin" => lower_expressions(args, env, instructions_emitted, is_tail),
                 b"lambdarec" => lower_lambdarec(args, env, instructions_emitted),
                 b"let" => lower_let(args, env, instructions_emitted, is_tail),
+                b"let*" => lower_letstar(args, env, instructions_emitted, is_tail),
                 b"if" => lower_if(args, env, instructions_emitted, is_tail),
                 b"list" => lower_list(args, env, instructions_emitted),
                 b"lambda" => lower_lambda(args, None, env, instructions_emitted),
