@@ -1057,18 +1057,22 @@ fn main() {
     let mut input_vec = Vec::new();
     input_vec.extend_from_slice(
         b"(let* (
+            (list (lambda args args)) ; isn't this cool?
             (reverse
                 (lambda (l)
                     ((lambdarec reverse-tail (l acc)
                         (if (null? l)
                             acc
                             (reverse-tail (cdr l) (cons (car l) acc)))) l '())))
+            (fold
+                (lambdarec fold (f i l)
+                    (if (null? l)
+                        i
+                        (fold f (f (car l) i) (cdr l)))))
+            (foldr (lambda (f i l) (fold f i (reverse l))))
             (map
                 (lambda (f l)
-                    (reverse ((lambdarec map-tail (f l acc)
-                        (if (null? l)
-                            acc
-                            (map-tail f (cdr l) (cons (f (car l)) acc)))) f l '())))))",
+                    (foldr (lambda (h t) (cons (f h) t)) '() l))))",
     );
     let _bytes_read = stdin().read_to_end(&mut input_vec);
     input_vec.extend_from_slice(b")");
