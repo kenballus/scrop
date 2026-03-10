@@ -5,14 +5,15 @@ use std::{
 };
 
 #[derive(Debug)]
-enum Expression<'a> {
+enum Token<'a> {
     Int(u64),
     Bool(bool),
     Char(u8),
     Symbol(&'a [u8]),
     Null,
-    Form(Vec<Expression<'a>>),
+    Form(Vec<Token<'a>>),
     String(Vec<u8>),
+    Dot,
 }
 
 fn is_delimiter(v: u8) -> bool {
@@ -46,6 +47,10 @@ fn is_symbol_start_char(v: u8) -> bool {
                 | b'<'
                 | b'>'
         )
+}
+
+fn negate_62(v: u64) -> u64 {
+    (!v).wrapping_add(1) & !(0b11 << 62)
 }
 
 fn is_symbol_char(v: u8) -> bool {
@@ -106,34 +111,36 @@ fn consume_symbol(input: &[u8]) -> Option<(&[u8], &[u8])> {
 }
 
 fn consume_character(input: &[u8]) -> Option<(u8, &[u8])> {
-    if let Some(input) = consume_bytes(input, b"#\\") {
-        if !input.is_empty() && starts_with_delimiter(&input[1..]) {
-            Some((input[0], &input[1..]))
-        } else {
-            None
-        }
+    if let Some(input) = consume_bytes(input, b"#\\")
+        && !input.is_empty()
+        && starts_with_delimiter(&input[1..])
+    {
+        Some((input[0], &input[1..]))
     } else {
         None
     }
 }
 
 fn consume_null(input: &[u8]) -> Option<&[u8]> {
-    if let Some(input) = consume_bytes(input, b"'") {
-        if let Some(input) = consume_bytes(consume_whitespace(input), b"(") {
-            if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
-                Some(input)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+    if let Some(input) = consume_bytes(input, b"'")
+        && let Some(input) = consume_bytes(consume_whitespace(input), b"(")
+        && let Some(input) = consume_bytes(consume_whitespace(input), b")")
+    {
+        Some(input)
     } else {
         None
     }
 }
 
-fn consume_form(input: &[u8]) -> Option<(Vec<Expression<'_>>, &[u8])> {
+fn consume_dot(input: &[u8]) -> Option<&[u8]> {
+    if let Some(input) = consume_bytes(input, b".") {
+        Some(input)
+    } else {
+        None
+    }
+}
+
+fn consume_form(input: &[u8]) -> Option<(Vec<Token<'_>>, &[u8])> {
     if let Some(input) = consume_bytes(input, b"(") {
         let (args, input) = consume_expressions(consume_whitespace(input));
         if let Some(input) = consume_bytes(consume_whitespace(input), b")") {
@@ -228,12 +235,10 @@ fn consume_nested_comment(input: &[u8]) -> Option<&[u8]> {
 }
 
 fn consume_datum_comment(input: &[u8]) -> Option<&[u8]> {
-    if let Some(input) = consume_bytes(input, b"#;") {
-        if let Some((_, input)) = consume_expression(consume_whitespace(input)) {
-            Some(input)
-        } else {
-            None
-        }
+    if let Some(input) = consume_bytes(input, b"#;")
+        && let Some((_, input)) = consume_expression(consume_whitespace(input))
+    {
+        Some(input)
     } else {
         None
     }
@@ -255,27 +260,29 @@ fn consume_whitespace(input: &[u8]) -> &[u8] {
     }
 }
 
-fn consume_expression(input: &[u8]) -> Option<(Expression<'_>, &[u8])> {
+fn consume_expression(input: &[u8]) -> Option<(Token<'_>, &[u8])> {
     if let Some((v, input)) = consume_int(input) {
-        Some((Expression::Int(v), input))
+        Some((Token::Int(v), input))
     } else if let Some((v, input)) = consume_bool(input) {
-        Some((Expression::Bool(v), input))
+        Some((Token::Bool(v), input))
     } else if let Some((v, input)) = consume_character(input) {
-        Some((Expression::Char(v), input))
+        Some((Token::Char(v), input))
     } else if let Some((sym, input)) = consume_symbol(input) {
-        Some((Expression::Symbol(sym), input))
+        Some((Token::Symbol(sym), input))
     } else if let Some((args, input)) = consume_form(input) {
-        Some((Expression::Form(args), input))
+        Some((Token::Form(args), input))
     } else if let Some((v, input)) = consume_string_literal(input) {
-        Some((Expression::String(v), input))
+        Some((Token::String(v), input))
     } else if let Some(input) = consume_null(input) {
-        Some((Expression::Null, input))
+        Some((Token::Null, input))
+    } else if let Some(input) = consume_dot(input) {
+        Some((Token::Dot, input))
     } else {
         None
     }
 }
 
-fn consume_expressions(mut input: &[u8]) -> (Vec<Expression<'_>>, &[u8]) {
+fn consume_expressions(mut input: &[u8]) -> (Vec<Token<'_>>, &[u8]) {
     let mut result = Vec::new();
     while !input.is_empty()
         && let Some((exp, new_input)) = consume_expression(input)
@@ -287,16 +294,16 @@ fn consume_expressions(mut input: &[u8]) -> (Vec<Expression<'_>>, &[u8]) {
 }
 
 fn lower_let<'a>(
-    mut args: Vec<Expression<'a>>,
+    mut args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
 ) -> Vec<String> {
-    if let Expression::Form(bindings) = args.remove(0) {
+    if let Token::Form(bindings) = args.remove(0) {
         let mut binding_names = Vec::new();
         let mut binding_exps = Vec::new();
         for binding in bindings {
-            if let Expression::Form(mut binding) = binding {
+            if let Token::Form(mut binding) = binding {
                 assert!(
                     binding.len() == 2,
                     "let binding has incorrect argument count."
@@ -307,13 +314,17 @@ fn lower_let<'a>(
                 panic!("let binding is not a form")
             }
         }
-        let mut lambda = vec![
-            Expression::Symbol(b"lambda"),
-            Expression::Form(binding_names),
-        ];
+        for binding_name in &binding_names {
+            // Required because Dot can appear in lambda params, but not here.
+            assert!(
+                matches!(binding_name, Token::Symbol(_)),
+                "let binding name is not a symbol"
+            );
+        }
+        let mut lambda = vec![Token::Symbol(b"lambda"), Token::Form(binding_names)];
         lambda.append(&mut args);
         lower_call(
-            Expression::Form(lambda),
+            Token::Form(lambda),
             binding_exps,
             env,
             instructions_emitted,
@@ -325,27 +336,26 @@ fn lower_let<'a>(
 }
 
 fn scan_expression_for_free_variables<'a>(
-    exp: &Expression<'a>,
+    exp: &Token<'a>,
     env: &HashMap<&'a [u8], usize>,
     parameters: &HashSet<&'a [u8]>,
 ) -> HashSet<&'a [u8]> {
     let mut result = HashSet::new();
     match exp {
         // No validation happens here, because it is handled later by codegen
-        Expression::Form(args) => {
+        Token::Form(args) => {
             if let Some(arg0) = args.first() {
-                if let Expression::Symbol(x) = arg0 {
+                if let Token::Symbol(x) = arg0 {
                     if env.contains_key(x) {
                         // this must be first to allow binding over lambda and let
                         result.extend(scan_expressions_for_free_variables(args, env, parameters));
                     } else {
                         match arg0 {
-                            Expression::Symbol(b"lambda") => {
+                            Token::Symbol(b"lambda") => {
                                 let mut new_parameters = parameters.clone();
-                                if let Some(Expression::Form(inner_params)) = args.get(1) {
+                                if let Some(Token::Form(inner_params)) = args.get(1) {
                                     for inner_param in inner_params {
-                                        if let Expression::Symbol(inner_param_symbol) = inner_param
-                                        {
+                                        if let Token::Symbol(inner_param_symbol) = inner_param {
                                             new_parameters.insert(inner_param_symbol);
                                         }
                                     }
@@ -356,13 +366,12 @@ fn scan_expression_for_free_variables<'a>(
                                     &new_parameters,
                                 ));
                             }
-                            Expression::Symbol(b"let") => {
+                            Token::Symbol(b"let") => {
                                 let mut new_parameters = parameters.clone();
-                                if let Some(Expression::Form(bindings)) = args.get(1) {
+                                if let Some(Token::Form(bindings)) = args.get(1) {
                                     for binding in bindings {
-                                        if let Expression::Form(binding_vec) = binding
-                                            && let [Expression::Symbol(k), v] =
-                                                binding_vec.as_slice()
+                                        if let Token::Form(binding_vec) = binding
+                                            && let [Token::Symbol(k), v] = binding_vec.as_slice()
                                         {
                                             result.extend(scan_expression_for_free_variables(v, env, parameters /* not let*, so bindings can't use each other. */));
                                             new_parameters.insert(k);
@@ -385,7 +394,7 @@ fn scan_expression_for_free_variables<'a>(
                 }
             }
         }
-        Expression::Symbol(name) => {
+        Token::Symbol(name) => {
             if !parameters.contains(name) && env.contains_key(name) {
                 result.insert(name);
             }
@@ -396,7 +405,7 @@ fn scan_expression_for_free_variables<'a>(
 }
 
 fn scan_expressions_for_free_variables<'a>(
-    exps: &[Expression<'a>],
+    exps: &[Token<'a>],
     env: &HashMap<&'a [u8], usize>,
     parameters: &HashSet<&'a [u8]>,
 ) -> HashSet<&'a [u8]> {
@@ -408,8 +417,8 @@ fn scan_expressions_for_free_variables<'a>(
 }
 
 fn lower_call<'a>(
-    func: Expression<'a>,
-    args: Vec<Expression<'a>>,
+    func: Token<'a>,
+    args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
@@ -454,88 +463,112 @@ fn lower_call<'a>(
 }
 
 fn lower_lambda<'a>(
-    mut args: Vec<Expression<'a>>,
+    mut args: Vec<Token<'a>>,
     lambda_name: Option<&'a [u8]>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
 ) -> Vec<String> {
     let mut result = Vec::new();
-    if let Expression::Form(parameters) = args.remove(0) {
-        let mut parameter_set = HashSet::new();
-        let mut parameter_names = Vec::new();
-        let arity = parameters.len();
-        for parameter in parameters {
-            if let Expression::Symbol(x) = parameter {
+    let mut is_variadic = false;
+    let parameters = match args.remove(0) {
+        Token::Form(parameters) => parameters,
+        Token::Symbol(parameter_list) => {
+            is_variadic = true;
+            vec![Token::Symbol(parameter_list)]
+        }
+        _ => panic!("Invalid token type for lambda parameter"),
+    };
+
+    let mut parameter_set = HashSet::new();
+    let mut parameter_names = Vec::new();
+    let mut arity: u64 = parameters.len().try_into().unwrap();
+    for (i, parameter) in parameters.into_iter().enumerate() {
+        match parameter {
+            Token::Symbol(x) => {
                 assert!(parameter_set.insert(x), "Duplicate argument in lambda");
                 parameter_names.push(x);
-            } else {
-                panic!("lambda parameter is not a symbol");
             }
-        }
-        let free_var_set =
-            scan_expressions_for_free_variables(args.as_slice(), env, &parameter_set);
-        let free_vars: Vec<_> = free_var_set.iter().collect();
-        result.append(&mut lower_variadic_primitive(
-            0,
-            "VECTOR",
-            free_vars.iter().map(|x| Expression::Symbol(x)).collect(),
-            env,
-            instructions_emitted + result.len(),
-        ));
-        result.push(format!("LOAD {arity} // lambda arity").to_owned());
-        result.push(
-            format!(
-                "LAMBDA {}",
-                instructions_emitted + result.len() + 1 /* for LAMBDA */ + 1 /* for JUMP */
-            )
-            .to_owned(),
-        );
-        let mut lambda_env = HashMap::new();
-        // caller pushes args in reverse order
-        for p in parameter_names.into_iter().rev() {
-            for v in lambda_env.values_mut() {
-                *v += 1;
+            Token::Dot => {
+                assert!(
+                    !is_variadic,
+                    "Encountered multiple Dots in lambda parameters!"
+                );
+                assert!(
+                    i == (arity - 2).try_into().unwrap(),
+                    "Dot not in penultimate position"
+                );
+                is_variadic = true;
+                arity -= 1;
             }
-            lambda_env.insert(p, 0);
+            _ => panic!("lambda parameter is not a symbol"),
         }
-        // CALL unpacks the freevar vector into the stack in reverse order
-        for f in free_vars.into_iter().rev() {
-            for v in lambda_env.values_mut() {
-                *v += 1;
-            }
-            lambda_env.insert(f, 0);
-        }
-        for v in lambda_env.values_mut() {
-            *v += 1; // for the lambda
-        }
-        if let Some(fn_name) = lambda_name {
-            lambda_env.insert(fn_name, 0);
-        }
-        for v in lambda_env.values_mut() {
-            *v += 1; // for lr
-        }
-
-        let mut lambda_body = lower_expressions(
-            args,
-            &lambda_env,
-            instructions_emitted + result.len() + 1, /* for JUMP */
-            true,
-        );
-        lambda_body.push("RETURN".to_owned());
-        result.push(format!("JUMP {}", lambda_body.len()));
-        result.append(&mut lambda_body);
-        result
-    } else {
-        panic!("lambda parameter list is invalid")
     }
+    let free_var_set = scan_expressions_for_free_variables(args.as_slice(), env, &parameter_set);
+    let free_vars: Vec<_> = free_var_set.iter().collect();
+    result.append(&mut lower_variadic_primitive(
+        0,
+        "VECTOR",
+        free_vars.iter().map(|x| Token::Symbol(x)).collect(),
+        env,
+        instructions_emitted + result.len(),
+    ));
+    result.push(
+        format!(
+            "LOAD {} // lambda arity",
+            if is_variadic { negate_62(arity) } else { arity }
+        )
+        .to_owned(),
+    );
+    result.push(
+        format!(
+            "LAMBDA {}",
+            instructions_emitted + result.len() + 1 /* for LAMBDA */ + 1 /* for JUMP */
+        )
+        .to_owned(),
+    );
+    let mut lambda_env = HashMap::new();
+    // caller pushes args in reverse order
+    for p in parameter_names.into_iter().rev() {
+        for v in lambda_env.values_mut() {
+            *v += 1;
+        }
+        lambda_env.insert(p, 0);
+    }
+    // CALL unpacks the freevar vector into the stack in reverse order
+    for f in free_vars.into_iter().rev() {
+        for v in lambda_env.values_mut() {
+            *v += 1;
+        }
+        lambda_env.insert(f, 0);
+    }
+    for v in lambda_env.values_mut() {
+        *v += 1; // for the lambda
+    }
+    if let Some(fn_name) = lambda_name {
+        lambda_env.insert(fn_name, 0);
+    }
+    for v in lambda_env.values_mut() {
+        *v += 1; // for lr
+    }
+
+    let mut lambda_body = lower_expressions(
+        args,
+        &lambda_env,
+        instructions_emitted + result.len() + 1, /* for JUMP */
+        true,
+    );
+    lambda_body.push("RETURN".to_owned());
+    result.push(format!("JUMP {}", lambda_body.len()));
+    result.append(&mut lambda_body);
+    result
 }
 
 fn lower_lambdarec<'a>(
-    mut args: Vec<Expression<'a>>,
+    mut args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
 ) -> Vec<String> {
-    if let Expression::Symbol(fn_name) = args.remove(0) {
+    if let Token::Symbol(fn_name) = args.remove(0) {
         lower_lambda(args, Some(fn_name), env, instructions_emitted)
     } else {
         panic!("Invalid lambdarec name")
@@ -543,7 +576,7 @@ fn lower_lambdarec<'a>(
 }
 
 fn lower_begin<'a>(
-    args: Vec<Expression<'a>>,
+    args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
@@ -557,7 +590,7 @@ fn lower_begin<'a>(
 }
 
 fn lower_if<'a>(
-    mut args: Vec<Expression<'a>>,
+    mut args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
@@ -604,7 +637,7 @@ fn lower_if<'a>(
 }
 
 fn lower_list<'a>(
-    args: Vec<Expression<'a>>,
+    args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
 ) -> Vec<String> {
@@ -632,7 +665,7 @@ fn lower_list<'a>(
 fn lower_nary_primitive<'a>(
     mnemonic: &str,
     n: usize,
-    args: Vec<Expression<'a>>,
+    args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
 ) -> Vec<String> {
@@ -660,7 +693,7 @@ fn lower_nary_primitive<'a>(
 fn lower_variadic_primitive<'a>(
     min_args: usize,
     mnemonic: &str,
-    args: Vec<Expression<'a>>,
+    args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
 ) -> Vec<String> {
@@ -688,17 +721,17 @@ fn lower_variadic_primitive<'a>(
 }
 
 fn lower_form<'a>(
-    mut args: Vec<Expression<'a>>,
+    mut args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
 ) -> Vec<String> {
     assert!(!args.is_empty(), "Empty form!");
     let arg_0 = args.remove(0);
-    if let Expression::Symbol(name) = arg_0 {
+    if let Token::Symbol(name) = arg_0 {
         if env.contains_key(name) {
             lower_call(
-                Expression::Symbol(name),
+                Token::Symbol(name),
                 args,
                 env,
                 instructions_emitted,
@@ -764,18 +797,18 @@ fn lower_form<'a>(
 }
 
 fn lower_expression<'a>(
-    exp: Expression<'a>,
+    exp: Token<'a>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
 ) -> Vec<String> {
     match exp {
-        Expression::Int(x) => vec!["LOAD ".to_owned() + &x.to_string()],
-        Expression::Char(x) => vec![format!("LOAD #\\x{x:x}")],
-        Expression::Bool(x) => vec!["LOAD ".to_owned() + if x { "#t" } else { "#f" }],
-        Expression::Form(args) => lower_form(args, env, instructions_emitted, is_tail),
-        Expression::Null => vec!["LOAD NULL".to_owned()],
-        Expression::Symbol(name) => {
+        Token::Int(x) => vec!["LOAD ".to_owned() + &x.to_string()],
+        Token::Char(x) => vec![format!("LOAD #\\x{x:x}")],
+        Token::Bool(x) => vec!["LOAD ".to_owned() + if x { "#t" } else { "#f" }],
+        Token::Form(args) => lower_form(args, env, instructions_emitted, is_tail),
+        Token::Null => vec!["LOAD NULL".to_owned()],
+        Token::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
                 vec!["GET ".to_owned() + &env_index.to_string()]
             } else {
@@ -785,18 +818,19 @@ fn lower_expression<'a>(
                 )
             }
         }
-        Expression::String(v) => lower_variadic_primitive(
+        Token::String(v) => lower_variadic_primitive(
             0,
             "STRING",
-            v.into_iter().map(Expression::Char).collect(),
+            v.into_iter().map(Token::Char).collect(),
             env,
             instructions_emitted,
         ),
+        Token::Dot => panic!("Dot is invalid in this context!"),
     }
 }
 
 fn lower_expressions<'a>(
-    exps: Vec<Expression<'a>>,
+    exps: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
     is_tail: bool,
@@ -822,7 +856,7 @@ fn lower_expressions<'a>(
     }
 }
 
-fn parse(input_slice: &[u8]) -> Vec<Expression<'_>> {
+fn parse(input_slice: &[u8]) -> Vec<Token<'_>> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
     assert!(
         input_slice.is_empty(),
@@ -831,7 +865,7 @@ fn parse(input_slice: &[u8]) -> Vec<Expression<'_>> {
     ast
 }
 
-fn codegen(ast: Vec<Expression>) -> Vec<String> {
+fn codegen(ast: Vec<Token>) -> Vec<String> {
     lower_expressions(ast, &HashMap::new(), 0, false)
 }
 
@@ -939,7 +973,7 @@ fn mismatched_nested_comment() {
 }
 
 #[test]
-#[should_panic(expected = "lambda parameter is not a symbol")]
+#[should_panic(expected = "let binding name is not a symbol")]
 fn numeric_symbol() {
     codegen(parse(b"(let ((1 0)) 1)"));
 }
