@@ -779,12 +779,38 @@ tailcall:
     // arity       <----- vm_sp
 
     SKIP_IMMEDIATE
-    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
+    cmp rdx, 0
+    jge 3f
+    mov rcx, rdi // rcx = # of passed args
+    mov rsi, rdx // rsi = # of required args
+    not rsi
+    sub rcx, rsi
+    cmp rcx, 0
+    jl 2f // too few args passed
+    mov rsi, TAGGED_NULL
+1:
+    PUSH(rsi)
+    cmp rcx, 0
+    je 1f
+    POP(rsi)
+    POP(r8)
+    sub vm_hp, 16 // alloc(16)
+    mov qword ptr [vm_hp], r8 // car
+    mov qword ptr [vm_hp + 8], rsi // cdr
+    mov rsi, vm_hp
+    or rsi, 1
+    dec rcx
+    jmp 1b
+1:
+    neg rdx
+    jmp 1f
+3:
     cmp rdi, rdx
     jne 2f // arity mismatch
-
+1:
     // saved vm_fp <----- vm_fp
     // prev locals
     // prev lambda
@@ -836,11 +862,38 @@ tailcall:
 .global call
 call:
     SKIP_IMMEDIATE
-    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
+    cmp rdx, 0
+    jge 3f
+    mov rcx, rdi // rcx = # of passed args
+    mov rsi, rdx // rsi = # of required args
+    not rsi
+    sub rcx, rsi
+    cmp rcx, 0
+    jl 2f // too few args passed
+    mov rsi, TAGGED_NULL
+1:
+    PUSH(rsi)
+    cmp rcx, 0
+    je 1f
+    POP(rsi)
+    POP(r8)
+    sub vm_hp, 16 // alloc(16)
+    mov qword ptr [vm_hp], r8 // car
+    mov qword ptr [vm_hp + 8], rsi // cdr
+    mov rsi, vm_hp
+    or rsi, 1
+    dec rcx
+    jmp 1b
+1:
+    neg rdx
+    jmp 1f
+3:
     cmp rdi, rdx
     jne 2f // arity mismatch
+1:
 
     // unpack freevars to stack
     mov rdx, qword ptr [rax + 8] // freevar vector
