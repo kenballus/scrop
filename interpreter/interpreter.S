@@ -182,28 +182,6 @@ interpret:
     mov code_base, vm_pc // code_base
     ret
 
-.section .text.add1
-.global add1
-add1:
-    SKIP_IMMEDIATE
-    UNPACK(INT, rax, 1f)
-    inc rax
-    PACK(INT, rax)
-    ret
-1:
-    ud2
-
-.section .text.sub1
-.global sub1
-sub1:
-    SKIP_IMMEDIATE
-    UNPACK(INT, rax, 1f)
-    dec rax
-    PACK(INT, rax)
-    ret
-1:
-    ud2
-
 .section .text.add
 .global add
 add:

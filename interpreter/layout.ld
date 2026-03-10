@@ -8,16 +8,6 @@ SECTIONS {
         *(eqp)
     }
 
-    . = 0xadd1000;
-    .text.add1 : {
-        *(add1)
-    }
-
-    . = 0x50b1000;
-    .text.sub1 : {
-        *(sub1)
-    }
-
     . = 0xd0d0000;
     .text.done : {
         *(done)

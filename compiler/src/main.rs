@@ -731,8 +731,6 @@ fn lower_form<'a>(
                 b"if" => lower_if(args, env, instructions_emitted, is_tail),
                 b"list" => lower_list(args, env, instructions_emitted),
                 b"lambda" => lower_lambda(args, None, env, instructions_emitted),
-                b"add1" => lower_nary_primitive("ADD1", 1, args, env, instructions_emitted),
-                b"sub1" => lower_nary_primitive("SUB1", 1, args, env, instructions_emitted),
                 b"zero?" => lower_nary_primitive("ZEROP", 1, args, env, instructions_emitted),
                 b"integer?" => lower_nary_primitive("INTEGERP", 1, args, env, instructions_emitted),
                 b"boolean?" => lower_nary_primitive("BOOLEANP", 1, args, env, instructions_emitted),
