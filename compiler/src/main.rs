@@ -575,20 +575,6 @@ fn lower_lambdarec<'a>(
     }
 }
 
-fn lower_begin<'a>(
-    args: Vec<Token<'a>>,
-    env: &HashMap<&'a [u8], usize>,
-    instructions_emitted: usize,
-    is_tail: bool,
-) -> Vec<String> {
-    if args.is_empty() {
-        // Technically wrong; whether begin allows 0 args is context-dependent
-        vec!["LOAD UNSPECIFIED".to_owned()]
-    } else {
-        lower_expressions(args, env, instructions_emitted, is_tail)
-    }
-}
-
 fn lower_if<'a>(
     mut args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
@@ -739,7 +725,7 @@ fn lower_form<'a>(
             )
         } else {
             match name {
-                b"begin" => lower_begin(args, env, instructions_emitted, is_tail),
+                b"begin" => lower_expressions(args, env, instructions_emitted, is_tail),
                 b"lambdarec" => lower_lambdarec(args, env, instructions_emitted),
                 b"let" => lower_let(args, env, instructions_emitted, is_tail),
                 b"if" => lower_if(args, env, instructions_emitted, is_tail),
