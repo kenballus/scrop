@@ -1,1 +1,1 @@
-((lambdarec fact-iter (n acc) (if (= n 0) acc (fact-iter (- n 1) (* n acc)))) 5 1)
+((lambdarec fact-tail (n acc) (if (= n 0) acc (fact-tail (- n 1) (* n acc)))) 5 1)

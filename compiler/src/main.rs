@@ -433,7 +433,7 @@ fn lower_call<'a>(
     }
 
     let num_args = args.len();
-    for arg in args.into_iter().rev() {
+    for arg in args {
         result.append(&mut lower_expression(
             arg,
             &new_env,
@@ -528,7 +528,7 @@ fn lower_lambda<'a>(
     );
     let mut lambda_env = HashMap::new();
     // caller pushes args in reverse order
-    for p in parameter_names.into_iter().rev() {
+    for p in parameter_names {
         for v in lambda_env.values_mut() {
             *v += 1;
         }

@@ -886,9 +886,9 @@ call:
 
     // the stack now looks like this:
     // saved vm_fp    <----- vm_fp
-    // arg N
-    // ...
     // arg 0
+    // ...
+    // arg N
     // freevar N
     // ...
     // freevar 0
