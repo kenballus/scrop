@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     io::{Read, stdin},
-    str::from_utf8,
 };
 
 #[derive(Debug)]
@@ -900,7 +899,7 @@ fn lower_form<'a>(
                     if let Some(primitive) = Primitive::from_bytes(name) {
                         lower_primitive(&primitive, args, env, instructions_emitted)
                     } else {
-                        panic!("Cannot resolve symbol '{name:?}'")
+                        panic!("Cannot resolve symbol '{}'", str::from_utf8(name).unwrap())
                     }
                 }
             }
@@ -925,10 +924,29 @@ fn lower_expression<'a>(
         Token::Symbol(name) => {
             if let Some(env_index) = env.get(name) {
                 vec!["GET ".to_owned() + &env_index.to_string()]
+            } else if let Some(primitive) = Primitive::from_bytes(name) {
+                if primitive.is_variadic {
+                    todo!();
+                }
+                let mut code = Vec::new();
+                code.extend_from_slice(b"(lambda (");
+
+                for i in 0..primitive.minimum_arity {
+                    code.extend_from_slice(format!(" arg{i}").as_bytes());
+                }
+                code.extend_from_slice(b") (");
+                code.extend_from_slice(name);
+                for i in 0..primitive.minimum_arity {
+                    code.extend_from_slice(format!(" arg{i}").as_bytes());
+                }
+                code.extend_from_slice(b"))");
+                let mut ast = parse(code.as_slice());
+                assert!(ast.len() == 1);
+                lower_expression(ast.remove(0), env, instructions_emitted, is_tail)
             } else {
                 panic!(
                     "Couldn't find environment entry for \"{}\"",
-                    from_utf8(name).unwrap()
+                    str::from_utf8(name).unwrap()
                 )
             }
         }
@@ -974,7 +992,8 @@ fn parse(input_slice: &[u8]) -> Vec<Token<'_>> {
     let (ast, input_slice) = consume_expressions(consume_whitespace(input_slice));
     assert!(
         input_slice.is_empty(),
-        "Parsing failed. Leftover data: {input_slice:?}"
+        "Parsing failed. Leftover data: {}",
+        str::from_utf8(input_slice).unwrap(),
     );
     ast
 }
@@ -1051,7 +1070,7 @@ fn too_many_if_args() {
 }
 
 #[test]
-#[should_panic(expected = "Parsing failed. Leftover data: [93]")]
+#[should_panic(expected = "Parsing failed. Leftover data: ]")]
 fn leftover_data() {
     codegen(parse(b"]"));
 }
@@ -1081,7 +1100,7 @@ fn use_undefined_variable() {
 }
 
 #[test]
-#[should_panic(expected = "Parsing failed. Leftover data: [35, 124, 32, 35, 124, 32, 124, 35]")]
+#[should_panic(expected = "Parsing failed. Leftover data: #| #| |#")]
 fn mismatched_nested_comment() {
     codegen(parse(b"#| #| |#"));
 }
