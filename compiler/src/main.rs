@@ -16,6 +16,146 @@ enum Token<'a> {
     Dot,
 }
 
+struct Primitive<'a> {
+    mnemonic: &'a str,
+    minimum_arity: usize,
+    is_variadic: bool,
+}
+
+impl Primitive<'_> {
+    #[allow(clippy::too_many_lines)]
+    fn from_bytes(input: &[u8]) -> Option<Primitive<'_>> {
+        match input {
+            b"zero?" => Some(Primitive {
+                mnemonic: "ZEROP",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"integer?" => Some(Primitive {
+                mnemonic: "INTEGERP",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"boolean?" => Some(Primitive {
+                mnemonic: "BOOLEANP",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"char?" => Some(Primitive {
+                mnemonic: "CHARP",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"null?" => Some(Primitive {
+                mnemonic: "NULLP",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"not" => Some(Primitive {
+                mnemonic: "NOT",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"char->integer" => Some(Primitive {
+                mnemonic: "CHARTOINT",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"integer->char" => Some(Primitive {
+                mnemonic: "INTTOCHAR",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"+" => Some(Primitive {
+                mnemonic: "ADD",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"-" => Some(Primitive {
+                mnemonic: "SUB",
+                minimum_arity: 1,
+                is_variadic: true,
+            }),
+            b"*" => Some(Primitive {
+                mnemonic: "MUL",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"<" => Some(Primitive {
+                mnemonic: "LT",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"=" => Some(Primitive {
+                mnemonic: "EQ",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"eq?" => Some(Primitive {
+                mnemonic: "EQP",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"string" => Some(Primitive {
+                mnemonic: "STRING",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"string-append" => Some(Primitive {
+                mnemonic: "STRINGAPPEND",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"string-ref" => Some(Primitive {
+                mnemonic: "STRINGREF",
+                minimum_arity: 2,
+                is_variadic: false,
+            }),
+            b"string-set!" => Some(Primitive {
+                mnemonic: "STRINGSET",
+                minimum_arity: 3,
+                is_variadic: false,
+            }),
+            b"vector" => Some(Primitive {
+                mnemonic: "VECTOR",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"vector-append" => Some(Primitive {
+                mnemonic: "VECTORAPPEND",
+                minimum_arity: 0,
+                is_variadic: true,
+            }),
+            b"vector-ref" => Some(Primitive {
+                mnemonic: "VECTORREF",
+                minimum_arity: 2,
+                is_variadic: false,
+            }),
+            b"vector-set!" => Some(Primitive {
+                mnemonic: "VECTORSET",
+                minimum_arity: 3,
+                is_variadic: false,
+            }),
+            b"cons" => Some(Primitive {
+                mnemonic: "CONS",
+                minimum_arity: 2,
+                is_variadic: false,
+            }),
+            b"car" => Some(Primitive {
+                mnemonic: "CAR",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"cdr" => Some(Primitive {
+                mnemonic: "CDR",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            _ => None,
+        }
+    }
+}
+
 fn is_delimiter(v: u8) -> bool {
     v.is_ascii_whitespace() || matches!(v, b'(' | b')' | b';')
 }
@@ -506,8 +646,8 @@ fn lower_lambda<'a>(
     let free_var_set = scan_expressions_for_free_variables(args.as_slice(), env, &parameter_set);
     let free_vars: Vec<_> = free_var_set.iter().collect();
     result.append(&mut lower_variadic_primitive(
-        0,
         "VECTOR",
+        0,
         free_vars.iter().map(|x| Token::Symbol(x)).collect(),
         env,
         instructions_emitted + result.len(),
@@ -648,6 +788,31 @@ fn lower_list<'a>(
     result
 }
 
+fn lower_primitive<'a>(
+    primitive: &Primitive,
+    args: Vec<Token<'a>>,
+    env: &HashMap<&'a [u8], usize>,
+    instructions_emitted: usize,
+) -> Vec<String> {
+    if primitive.is_variadic {
+        lower_variadic_primitive(
+            primitive.mnemonic,
+            primitive.minimum_arity,
+            args,
+            env,
+            instructions_emitted,
+        )
+    } else {
+        lower_nary_primitive(
+            primitive.mnemonic,
+            primitive.minimum_arity,
+            args,
+            env,
+            instructions_emitted,
+        )
+    }
+}
+
 fn lower_nary_primitive<'a>(
     mnemonic: &str,
     n: usize,
@@ -677,8 +842,8 @@ fn lower_nary_primitive<'a>(
 }
 
 fn lower_variadic_primitive<'a>(
-    min_args: usize,
     mnemonic: &str,
+    min_args: usize,
     args: Vec<Token<'a>>,
     env: &HashMap<&'a [u8], usize>,
     instructions_emitted: usize,
@@ -731,48 +896,13 @@ fn lower_form<'a>(
                 b"if" => lower_if(args, env, instructions_emitted, is_tail),
                 b"list" => lower_list(args, env, instructions_emitted),
                 b"lambda" => lower_lambda(args, None, env, instructions_emitted),
-                b"zero?" => lower_nary_primitive("ZEROP", 1, args, env, instructions_emitted),
-                b"integer?" => lower_nary_primitive("INTEGERP", 1, args, env, instructions_emitted),
-                b"boolean?" => lower_nary_primitive("BOOLEANP", 1, args, env, instructions_emitted),
-                b"char?" => lower_nary_primitive("CHARP", 1, args, env, instructions_emitted),
-                b"null?" => lower_nary_primitive("NULLP", 1, args, env, instructions_emitted),
-                b"not" => lower_nary_primitive("NOT", 1, args, env, instructions_emitted),
-                b"char->integer" => {
-                    lower_nary_primitive("CHARTOINT", 1, args, env, instructions_emitted)
+                _ => {
+                    if let Some(primitive) = Primitive::from_bytes(name) {
+                        lower_primitive(&primitive, args, env, instructions_emitted)
+                    } else {
+                        panic!("Cannot resolve symbol '{name:?}'")
+                    }
                 }
-                b"integer->char" => {
-                    lower_nary_primitive("INTTOCHAR", 1, args, env, instructions_emitted)
-                }
-                b"+" => lower_variadic_primitive(0, "ADD", args, env, instructions_emitted),
-                b"-" => lower_variadic_primitive(1, "SUB", args, env, instructions_emitted),
-                b"*" => lower_variadic_primitive(0, "MUL", args, env, instructions_emitted),
-                b"<" => lower_variadic_primitive(0, "LT", args, env, instructions_emitted),
-                b"=" => lower_variadic_primitive(0, "EQ", args, env, instructions_emitted),
-                b"eq?" => lower_variadic_primitive(0, "EQP", args, env, instructions_emitted),
-                b"string" => lower_variadic_primitive(0, "STRING", args, env, instructions_emitted),
-                b"string-append" => {
-                    lower_variadic_primitive(0, "STRINGAPPEND", args, env, instructions_emitted)
-                }
-                b"string-ref" => {
-                    lower_nary_primitive("STRINGREF", 2, args, env, instructions_emitted)
-                }
-                b"string-set!" => {
-                    lower_nary_primitive("STRINGSET", 3, args, env, instructions_emitted)
-                }
-                b"vector" => lower_variadic_primitive(0, "VECTOR", args, env, instructions_emitted),
-                b"vector-append" => {
-                    lower_variadic_primitive(0, "VECTORAPPEND", args, env, instructions_emitted)
-                }
-                b"vector-ref" => {
-                    lower_nary_primitive("VECTORREF", 2, args, env, instructions_emitted)
-                }
-                b"vector-set!" => {
-                    lower_nary_primitive("VECTORSET", 3, args, env, instructions_emitted)
-                }
-                b"cons" => lower_nary_primitive("CONS", 2, args, env, instructions_emitted),
-                b"car" => lower_nary_primitive("CAR", 1, args, env, instructions_emitted),
-                b"cdr" => lower_nary_primitive("CDR", 1, args, env, instructions_emitted),
-                _ => panic!("Cannot resolve symbol '{name:?}'"),
             }
         }
     } else {
@@ -803,8 +933,8 @@ fn lower_expression<'a>(
             }
         }
         Token::String(v) => lower_variadic_primitive(
-            0,
             "STRING",
+            0,
             v.into_iter().map(Token::Char).collect(),
             env,
             instructions_emitted,
