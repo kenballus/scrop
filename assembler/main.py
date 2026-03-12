@@ -15,6 +15,89 @@ class Unspecified:
     pass
 
 
+def opcode_from_mnemonic(mnem: str) -> int:
+    match mnem.upper():
+        case "LOAD":
+            return 0x10AD000
+        case "PRIMAPPLY":
+            return 0x9A99000
+        case "JUMP":
+            return 0x70AD000
+        case "CJUMP":
+            return 0xCA7000
+        case "GET":
+            return 0x9E7000
+        case "FORGET":
+            return 0x49E7000
+        case "APPLY":
+            return 0xA991000
+        case "TAILAPPLY":
+            return 0x7991000
+        case "ADD":
+            return 0x0ADD000
+        case "SUB":
+            return 0x050B000
+        case "MUL":
+            return 0x0A55000
+        case "LT":
+            return 0x1700000
+        case "EQ":
+            return 0xE3E3000
+        case "EQP":
+            return 0x3E3E000
+        case "ZEROP":
+            return 0xEEEE000
+        case "STRING":
+            return 0x571F000
+        case "STRINGREF":
+            return 0x571E000
+        case "STRINGSET":
+            return 0x5715000
+        case "STRINGAPPEND":
+            return 0x571A000
+        case "VECTOR":
+            return 0x5ECF000
+        case "VECTORREF":
+            return 0x5ECE000
+        case "VECTORSET":
+            return 0x5EC5000
+        case "VECTORAPPEND":
+            return 0x5ECA000
+        case "INTEGERP":
+            return 0x1234000
+        case "BOOLEANP":
+            return 0xB001000
+        case "CHARP":
+            return 0xCACA000
+        case "NULLP":
+            return 0x4321000
+        case "NOT":
+            return 0x7777000
+        case "INTTOCHAR":
+            return 0x170C000
+        case "CHARTOINT":
+            return 0xC701000
+        case "FRAME":
+            return 0x57AC000
+        case "CONS":
+            return 0xC0C0000
+        case "CAR":
+            return 0xCA00000
+        case "CDR":
+            return 0xCD00000
+        case "LAMBDA":
+            return 0xBAAA000
+        case "CALL":
+            return 0xCA11000
+        case "TAILCALL":
+            return 0x7A11000
+        case "RETURN":
+            return 0xDB22000
+        case "DONE":
+            return 0xD0D0000
+    raise ValueError(f"Unrecognized mnemonic {mnem!r}")
+
+
 Immediate = int | bool | Char | None | Unspecified
 
 CHAR_PREFIX: str = "#\\"
@@ -76,89 +159,20 @@ def main() -> None:
             split_line = split_line[: split_line.index("//")]
         match split_line:
             case ["LOAD", v]:
-                opcode = 0x10AD000
                 immediate = serialize_immediate(parse_immediate(v))
             case ["JUMP", v]:
-                opcode = 0x70AD000
                 immediate = int(v).to_bytes(8, "little")
             case ["CJUMP", v]:
-                opcode = 0xCA7000
                 immediate = int(v).to_bytes(8, "little")
+            case ["PRIMAPPLY", m]:
+                immediate = opcode_from_mnemonic(m).to_bytes(8, "little")
             case ["GET", v]:
-                opcode = 0x9E7000
                 immediate = int(v).to_bytes(8, "little")
-            case ["FORGET"]:
-                opcode = 0x49E7000
-            case ["APPLY"]:
-                opcode = 0xA991000
-            case ["TAILAPPLY"]:
-                opcode = 0x7991000
-            case ["ADD"]:
-                opcode = 0x0ADD000
-            case ["SUB"]:
-                opcode = 0x050B000
-            case ["MUL"]:
-                opcode = 0x0A55000
-            case ["LT"]:
-                opcode = 0x1700000
-            case ["EQ"]:
-                opcode = 0xE3E3000
-            case ["EQP"]:
-                opcode = 0x3E3E000
-            case ["ZEROP"]:
-                opcode = 0xEEEE000
-            case ["STRING"]:
-                opcode = 0x571F000
-            case ["STRINGREF"]:
-                opcode = 0x571E000
-            case ["STRINGSET"]:
-                opcode = 0x5715000
-            case ["STRINGAPPEND"]:
-                opcode = 0x571A000
-            case ["VECTOR"]:
-                opcode = 0x5ECF000
-            case ["VECTORREF"]:
-                opcode = 0x5ECE000
-            case ["VECTORSET"]:
-                opcode = 0x5EC5000
-            case ["VECTORAPPEND"]:
-                opcode = 0x5ECA000
-            case ["INTEGERP"]:
-                opcode = 0x1234000
-            case ["BOOLEANP"]:
-                opcode = 0xB001000
-            case ["CHARP"]:
-                opcode = 0xCACA000
-            case ["NULLP"]:
-                opcode = 0x4321000
-            case ["NOT"]:
-                opcode = 0x7777000
-            case ["INTTOCHAR"]:
-                opcode = 0x170C000
-            case ["CHARTOINT"]:
-                opcode = 0xC701000
-            case ["FRAME"]:
-                opcode = 0x57AC000
-            case ["CONS"]:
-                opcode = 0xC0C0000
-            case ["CAR"]:
-                opcode = 0xCA00000
-            case ["CDR"]:
-                opcode = 0xCD00000
             case ["LAMBDA", v]:
-                opcode = 0xBAAA000
                 immediate = int(v).to_bytes(8, "little")
-            case ["CALL"]:
-                opcode = 0xCA11000
-            case ["TAILCALL"]:
-                opcode = 0x7A11000
-            case ["RETURN"]:
-                opcode = 0xDB22000
-            case ["DONE"]:
-                opcode = 0xD0D0000
-            case _:
-                raise ValueError(f"Couldn't parse line {line}")
-        os.write(1, opcode.to_bytes(8, "little") + immediate)
+        os.write(
+            1, opcode_from_mnemonic(split_line[0]).to_bytes(8, "little") + immediate
+        )
 
 
 if __name__ == "__main__":

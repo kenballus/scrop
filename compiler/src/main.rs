@@ -72,7 +72,7 @@ impl Primitive<'_> {
             }),
             b"-" => Some(Primitive {
                 mnemonic: "SUB",
-                minimum_arity: 1,
+                minimum_arity: 0,
                 is_variadic: true,
             }),
             b"*" => Some(Primitive {
@@ -984,23 +984,35 @@ fn lower_expression<'a>(
                 vec!["GET ".to_owned() + &env_index.to_string()]
             } else if let Some(primitive) = Primitive::from_bytes(name) {
                 if primitive.is_variadic {
-                    todo!();
-                }
-                let mut code = Vec::new();
-                code.extend_from_slice(b"(lambda (");
+                    vec![
+                        "LOAD 0".to_owned(),
+                        "VECTOR".to_owned(),
+                        format!(
+                            "LOAD {}",
+                            negate_62((primitive.minimum_arity + 1).try_into().unwrap())
+                        ),
+                        format!("LAMBDA {}", instructions_emitted + 5),
+                        "JUMP 2".to_owned(),
+                        format!("PRIMAPPLY {}", primitive.mnemonic),
+                        "RETURN".to_owned(),
+                    ]
+                } else {
+                    let mut code = Vec::new();
+                    code.extend_from_slice(b"(lambda (");
 
-                for i in 0..primitive.minimum_arity {
-                    code.extend_from_slice(format!(" arg{i}").as_bytes());
+                    for i in 0..primitive.minimum_arity {
+                        code.extend_from_slice(format!(" arg{i}").as_bytes());
+                    }
+                    code.extend_from_slice(b") (");
+                    code.extend_from_slice(name);
+                    for i in 0..primitive.minimum_arity {
+                        code.extend_from_slice(format!(" arg{i}").as_bytes());
+                    }
+                    code.extend_from_slice(b"))");
+                    let mut ast = parse(code.as_slice());
+                    assert!(ast.len() == 1);
+                    lower_expression(ast.remove(0), env, instructions_emitted, is_tail)
                 }
-                code.extend_from_slice(b") (");
-                code.extend_from_slice(name);
-                for i in 0..primitive.minimum_arity {
-                    code.extend_from_slice(format!(" arg{i}").as_bytes());
-                }
-                code.extend_from_slice(b"))");
-                let mut ast = parse(code.as_slice());
-                assert!(ast.len() == 1);
-                lower_expression(ast.remove(0), env, instructions_emitted, is_tail)
             } else {
                 panic!(
                     "Couldn't find environment entry for \"{}\"",
@@ -1146,12 +1158,6 @@ fn too_few_unary_args() {
 #[should_panic(expected = "incorrect argument count for 1-ary primitive")]
 fn too_many_unary_args() {
     codegen(parse(b"(not 1 2)"));
-}
-
-#[test]
-#[should_panic(expected = "Too few arguments provided to variadic primitive")]
-fn too_few_variadic_args() {
-    codegen(parse(b"(-)"));
 }
 
 #[test]

@@ -221,7 +221,8 @@ sub:
     UNPACK(INT, rdi, 2f) // arity
     test rdi, rdi
     jne 1f
-    ud2 // can't have (-)
+    PUSH(0)
+    ret
 1:
     UNPACK(INT, rax, 2f)
 1:
@@ -989,6 +990,35 @@ tailapply:
     PACK(LAMBDA, rax)
     PACK(INT, rcx)
     jmp .Ltailappcall
+2:
+    ud2
+
+.section .text.primapply
+.global primapply
+primapply:
+    GET_IMMEDIATE(rdx)
+    PEEK(rsi, 2) // grab the arg list
+    PUSH(rsi)
+    xor ecx, ecx
+1:
+    // NOTE: this assumes that all variadic primitives
+    // accept 0 or more arguments.
+    // If you ever add a variadic primitive that has a nonzero
+    // minimum arity, this will not work.
+    cmp qword ptr [vm_sp], TAGGED_NULL
+    je 1f
+    UNPACK(PAIR, rsi, 2f)
+    mov rdi, qword ptr [rsi]
+    mov rsi, qword ptr [rsi + 8]
+    PUSH(rdi)
+    PUSH(rsi)
+    inc rcx
+    jmp 1b
+1:
+    DROP
+    sub vm_pc, IMMEDIATE_SIZE
+    PACK(INT, rcx)
+    jmp rdx
 2:
     ud2
 

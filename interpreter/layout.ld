@@ -3,6 +3,11 @@ SECTIONS {
     .text : {
     }
 
+    . = 0x9a99000;
+    .text.primapply : {
+        *(primapply)
+    }
+
     . = 0xa991000;
     .text.apply : {
         *(apply)
