@@ -318,7 +318,14 @@ fn consume_int(input: &[u8]) -> Option<(u64, &[u8])> {
     }
     let input = &input[bytes_consumed..];
     if starts_with_delimiter(input) {
-        Some((if is_negated {negate_62(result)} else {result}, input))
+        Some((
+            if is_negated {
+                negate_62(result)
+            } else {
+                result
+            },
+            input,
+        ))
     } else {
         None
     }
@@ -816,32 +823,6 @@ fn lower_if<'a>(
     result
 }
 
-fn lower_list<'a>(
-    args: Vec<Token<'a>>,
-    env: &HashMap<&'a [u8], usize>,
-    instructions_emitted: usize,
-) -> Vec<String> {
-    let mut new_env = env.clone();
-    let mut result = Vec::new();
-    let num_args = args.len();
-    for arg in args {
-        result.append(&mut lower_expression(
-            arg,
-            &new_env,
-            instructions_emitted + result.len(),
-            false,
-        ));
-        for v in new_env.values_mut() {
-            *v += 1;
-        }
-    }
-    result.push("LOAD NULL".to_owned());
-    for _ in 0..num_args {
-        result.push("CONS".to_owned());
-    }
-    result
-}
-
 fn lower_primitive<'a>(
     primitive: &Primitive,
     args: Vec<Token<'a>>,
@@ -956,7 +937,6 @@ fn lower_form<'a>(
                 b"let" => lower_let(args, env, instructions_emitted, is_tail),
                 b"let*" => lower_letstar(args, env, instructions_emitted, is_tail),
                 b"if" => lower_if(args, env, instructions_emitted, is_tail),
-                b"list" => lower_list(args, env, instructions_emitted),
                 b"lambda" => lower_lambda(args, None, env, instructions_emitted),
                 _ => {
                     if let Some(primitive) = Primitive::from_bytes(name) {
