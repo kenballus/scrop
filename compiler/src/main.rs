@@ -303,17 +303,22 @@ fn consume_bytes<'a>(input: &'a [u8], pattern: &'a [u8]) -> Option<&'a [u8]> {
 fn consume_int(input: &[u8]) -> Option<(u64, &[u8])> {
     let mut result: u64 = 0;
     let mut bytes_consumed: usize = 0;
+    let mut is_negated = false;
+    if !input.is_empty() && input[0] == b'-' {
+        is_negated = true;
+        bytes_consumed = 1;
+    }
     while bytes_consumed < input.len() && input[bytes_consumed].is_ascii_digit() {
         result *= 10;
         result += u64::from(input[bytes_consumed] - b'0');
         bytes_consumed += 1;
     }
-    if bytes_consumed == 0 {
+    if bytes_consumed == 0 || (is_negated && bytes_consumed == 1) {
         return None;
     }
     let input = &input[bytes_consumed..];
     if starts_with_delimiter(input) {
-        Some((result, input))
+        Some((if is_negated {negate_62(result)} else {result}, input))
     } else {
         None
     }
