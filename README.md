@@ -33,10 +33,20 @@ x86\_64 asm and a little bit of c (without libc).
 ## example
 
 ```sh
-printf '(if (= 10 (+ 1 2 3 4)) (integer->char 97) (integer->char 65))' | ./run.bash
+cat <<EOF | ./run.bash
+(string
+    (let ((sum (lambda (l) (fold + 0 l))))
+        (integer->char (sum (list 1 2 3 4 5 6 7 8 9 10 11))))
+    #\N
+    #\G
+    #\U
+    #\L
+    #\A
+    #\R)
+EOF
 ```
 ```
-#\a
+"BNGULAR"
 ```
 
 ## manual

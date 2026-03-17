@@ -30,10 +30,7 @@
     mov qword ptr [vm_sp], X
 
 #define GET_IMMEDIATE(R64) \
-    pop R64
-
-#define SKIP_IMMEDIATE \
-    add vm_pc, IMMEDIATE_SIZE
+    mov R64, qword ptr [vm_pc - IMMEDIATE_SIZE]
 
 // Needs to preserve flags
 #define POP(X) \
@@ -168,6 +165,9 @@
     TAG_##T(SRC) ; \
     PUSH(SRC)
 
+#define NEXT_INSTRUCTION \
+    ret IMMEDIATE_SIZE
+
 .section .text
 
 stack_overflow:
@@ -187,17 +187,16 @@ interpret:
     xor vm_fp, vm_fp // vm frame pointer
     xor vm_lr, vm_lr // vm frame pointer
     mov code_base, vm_pc // code_base
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.add
 .global add
 add:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 3f) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(0))
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rax, 3f)
 2:
@@ -205,7 +204,7 @@ add:
     cmp rdi, 1
     jne 1f
     PACK(INT, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rcx, 3f)
     add rax, rcx
@@ -217,12 +216,11 @@ add:
 .section .text.sub
 .global sub
 sub:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 2f) // arity
     test rdi, rdi
     jne 1f
     PUSH(0)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rax, 2f)
 1:
@@ -231,7 +229,7 @@ sub:
     // unary special case
     neg rax
     PACK(INT, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rcx, 2f)
     sub rax, rcx
@@ -239,19 +237,18 @@ sub:
     cmp rdi, 1
     jne 1b
     PACK(INT, rax)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
 .section .text.mul
 .global mul
 mul:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 3f) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(1))
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rax, 3f)
 2:
@@ -259,7 +256,7 @@ mul:
     cmp rdi, 1
     jne 1f
     PACK(INT, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rcx, 3f)
     mul rcx
@@ -272,14 +269,13 @@ mul:
 .section .text.lt
 .global lt
 lt:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 2f) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
     // 0 args
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rax, 2f)
     dec rdi
@@ -287,7 +283,7 @@ lt:
     jne 1f
     // 1 arg
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rcx, 2f)
     cmp rax, rcx
@@ -298,21 +294,20 @@ lt:
     test rdi, rdi
     jne 1b
     PACK(BOOL, rsi)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
 .section .text.eq
 .global eq
 eq:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 2f) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
     // 0 args
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rax, 2f)
     dec rdi
@@ -320,7 +315,7 @@ eq:
     jne 1f
     // 1 arg
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     UNPACK(INT, rcx, 2f)
     cmp rax, rcx
@@ -331,21 +326,20 @@ eq:
     test rdi, rdi
     jne 1b
     PACK(BOOL, rsi)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
 .section .text.eqp
 .global eqp
 eqp:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 2f) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
     // 0 args
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     POP(rax)
     dec rdi
@@ -353,7 +347,7 @@ eqp:
     jne 1f
     // 1 arg
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     POP(rcx)
     cmp rax, rcx
@@ -364,7 +358,7 @@ eqp:
     test rdi, rdi
     jne 1b
     PACK(BOOL, rsi)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
@@ -373,105 +367,97 @@ eqp:
 load:
     GET_IMMEDIATE(rax)
     PUSH(rax)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.zerop
 .global zerop
 zerop:
-    SKIP_IMMEDIATE
     UNPACK(INT, rax, 1f)
     test rax, rax
     mov eax, 0 // cannot be xor because of flags
     sete al
     PACK(BOOL, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.integerp
 .global integerp
 integerp:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_NOT_INT(rax, 1f)
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 1:
     PUSH(FALSE)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.booleanp
 .global booleanp
 booleanp:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
-    ret
+    NEXT_INSTRUCTION
 1: // bool
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.charp
 .global charp
 charp:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
     PUSH(FALSE)
-    ret
+    NEXT_INSTRUCTION
 1: // char
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.nullp
 .global nullp
 nullp:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_NULL(rax, 1f)
     PUSH(FALSE)
-    ret
+    NEXT_INSTRUCTION
 1: // '()
     PUSH(TRUE)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.not
 .global not
 not:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_BOOL(rax, 1f)
     PUSH(FALSE)
-    ret
+    NEXT_INSTRUCTION
 1: // bool
     UNTAG_BOOL(rax)
     not rax
     and rax, 1
     PACK(BOOL, rax)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.chartoint
 .global chartoint
 chartoint:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
     ud2
 1: // char
     UNTAG_CHAR(rax)
     PACK(INT, rax)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.inttochar
 .global inttochar
 inttochar:
-    SKIP_IMMEDIATE
     UNPACK(INT, rax, 2f)
     cmp rax, 128
     jae 2f
     PACK(CHAR, rax)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
@@ -486,9 +472,9 @@ cjump:
     cmp rcx, FALSE
     je 1f
     shl rax, 4
-    lea vm_pc, [vm_pc + rax]
+    add vm_pc, rax
 1:
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.get
 .global get
@@ -496,41 +482,38 @@ get:
     GET_IMMEDIATE(rax) // The offset from the sp to get
     mov rax, qword ptr [vm_sp + rax * STACK_SLOT_SIZE]
     PUSH(rax)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.forget
 .global forget
 forget:
-    SKIP_IMMEDIATE
     DROP
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.jump
 .global jump
 jump:
     GET_IMMEDIATE(rax)
     shl rax, 4
-    lea vm_pc, [vm_pc + rax]
-    ret
+    add vm_pc, rax
+    NEXT_INSTRUCTION
 
 .section .text.cons
 .global cons
 cons:
-    SKIP_IMMEDIATE
     POP(rax) // cdr
     POP(rcx) // car
     sub vm_hp, 16 // alloc(16)
     mov rdi, vm_hp
     mov qword ptr [rdi], rcx
     mov qword ptr [rdi + 8], rax
-    or rdi, 1
+    TAG_PAIR(rdi)
     PUSH(rdi)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.car
 .global car
 car:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
     ud2
@@ -538,12 +521,11 @@ car:
     UNTAG_PAIR(rax)
     mov rax, qword ptr [rax]
     PUSH(rax)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.cdr
 .global cdr
 cdr:
-    SKIP_IMMEDIATE
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
     ud2
@@ -551,12 +533,11 @@ cdr:
     UNTAG_PAIR(rax)
     mov rax, qword ptr [rax + 8]
     PUSH(rax)
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.string
 .global string
 string:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 3f) // arity
     // alloc(UP_TO_8(arity) + 8)
     sub vm_hp, rdi
@@ -569,7 +550,7 @@ string:
     test rdi, rdi
     jne 1f
     PACK(STRING, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     POP(rcx)
     JMP_IF_CHAR(rcx, 1f)
@@ -586,7 +567,6 @@ string:
 .section .text.stringref
 .global stringref
 stringref:
-    SKIP_IMMEDIATE
     UNPACK(INT, rcx, 1f) // index
     UNPACK(STRING, rax, 1f) // index
     mov rdi, qword ptr [rax]
@@ -595,14 +575,13 @@ stringref:
     mov al, byte ptr [rax + rcx + 8]
     and rax, 0xff
     PACK(CHAR, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.stringset
 .global stringset
 stringset:
-    SKIP_IMMEDIATE
     POP(rsi) // char
     JMP_IF_CHAR(rsi, 1f)
     ud2
@@ -616,14 +595,13 @@ stringset:
     mov byte ptr [rax + rcx + 8], sil
     and rax, 0xff
     PACK(CHAR, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.stringappend
 .global stringappend
 stringappend:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdx, 2f) // arity
     test rdx, rdx
     jne 1f
@@ -632,7 +610,7 @@ stringappend:
     mov qword ptr [vm_hp], 0
     mov rax, vm_hp
     PACK(STRING, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     // at least one arg
     xor ecx, ecx // counter
@@ -665,14 +643,13 @@ stringappend:
 1:
     mov rax, vm_hp
     PACK(STRING, rax)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
 .section .text.vector
 .global vector
 vector:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdi, 3f) // arity
     // alloc(arity * 8 + 8)
     neg rdi
@@ -685,7 +662,7 @@ vector:
     test rdi, rdi
     jne 1f
     PACK(VECTOR, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     POP(rcx)
     mov qword ptr [rax + rsi * 8 + 8], rcx
@@ -698,7 +675,6 @@ vector:
 .section .text.vectorref
 .global vectorref
 vectorref:
-    SKIP_IMMEDIATE
     UNPACK(INT, rcx, 1f) // index
     UNPACK(VECTOR, rax, 1f) // vector
     mov rdi, qword ptr [rax]
@@ -706,14 +682,13 @@ vectorref:
     jae 1f
     mov rax, qword ptr [rax + rcx * 8 + 8]
     PUSH(rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.vectorset
 .global vectorset
 vectorset:
-    SKIP_IMMEDIATE
     POP(rsi) // arg
     UNPACK(INT, rcx, 1f) // index
     UNPACK(VECTOR, rax, 1f) // vector
@@ -722,14 +697,13 @@ vectorset:
     jae 1f // index out of bounds
     mov qword ptr [rax + rcx * 8 + 8], rsi
     PUSH(rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.vectorappend
 .global vectorappend
 vectorappend:
-    SKIP_IMMEDIATE
     UNPACK(INT, rdx, 2f) // arity
     test rdx, rdx
     jne 1f
@@ -738,7 +712,7 @@ vectorappend:
     mov qword ptr [vm_hp], 0
     mov rax, vm_hp
     PACK(VECTOR, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     // at least one arg
     xor ecx, ecx // counter
@@ -771,7 +745,7 @@ vectorappend:
 1:
     mov rax, vm_hp
     PACK(VECTOR, rax)
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
@@ -786,7 +760,6 @@ tailcall:
     // lambda
     // arity       <----- vm_sp
 
-    SKIP_IMMEDIATE
 .Ltailappcall:
     UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
@@ -810,7 +783,7 @@ tailcall:
     mov qword ptr [vm_hp], r8 // car
     mov qword ptr [vm_hp + 8], rsi // cdr
     mov rsi, vm_hp
-    or rsi, 1
+    TAG_PAIR(rsi)
     dec rcx
     jmp 1b
 1:
@@ -863,14 +836,13 @@ tailcall:
     shl vm_pc, 4
     add vm_pc, code_base
 
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
 .section .text.call
 .global call
 call:
-    SKIP_IMMEDIATE
 .Lappcall:
     UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
@@ -894,7 +866,7 @@ call:
     mov qword ptr [vm_hp], r8 // car
     mov qword ptr [vm_hp + 8], rsi // cdr
     mov rsi, vm_hp
-    or rsi, 1
+    TAG_PAIR(rsi)
     dec rcx
     jmp 1b
 1:
@@ -935,14 +907,13 @@ call:
     // freevar 0
     // lambda
     // saved vm_lr    <----- vm_sp
-    ret
+    NEXT_INSTRUCTION
 2:
     ud2
 
 .section .text.apply
 .global apply
 apply:
-    SKIP_IMMEDIATE
     POP(rcx)
     UNPACK(LAMBDA, rax, 2f) // the lambda
     PUSH(vm_fp)
@@ -970,7 +941,6 @@ apply:
 .section .text.tailapply
 .global tailapply
 tailapply:
-    SKIP_IMMEDIATE
     POP(rcx)
     UNPACK(LAMBDA, rax, 2f) // the lambda
     PUSH(rcx)
@@ -1016,7 +986,6 @@ primapply:
     jmp 1b
 1:
     DROP
-    sub vm_pc, IMMEDIATE_SIZE
     PACK(INT, rcx)
     jmp rdx
 2:
@@ -1034,14 +1003,13 @@ lambda:
     mov qword ptr [vm_hp + 16], rcx
     mov rax, vm_hp
     PACK(LAMBDA, rax)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.return
 .global return
 return:
-    SKIP_IMMEDIATE
     POP(rdx) // retval
     mov vm_pc, vm_lr
     POP(vm_lr) // lr
@@ -1049,17 +1017,16 @@ return:
     mov vm_sp, vm_fp
     POP(vm_fp)
     PUSH(rdx)
-    ret
+    NEXT_INSTRUCTION
 1:
     ud2
 
 .section .text.frame
 .global frame
 frame:
-    SKIP_IMMEDIATE
     PUSH(vm_fp)
     mov vm_fp, vm_sp
-    ret
+    NEXT_INSTRUCTION
 
 .section .text.done
 .global done
