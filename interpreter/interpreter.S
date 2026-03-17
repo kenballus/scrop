@@ -759,7 +759,6 @@ tailcall:
     // lambda
     // arity       <----- vm_sp
 
-.Ltailappcall:
     UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
@@ -842,7 +841,6 @@ tailcall:
 .section .text.call
 .global call
 call:
-.Lappcall:
     UNPACK(INT, rdi, 2f) // num args passed
     UNPACK(LAMBDA, rax, 2f) // lambda
     mov rdx, qword ptr [rax + 16] // arity
@@ -933,7 +931,7 @@ apply:
     DROP
     PACK(LAMBDA, rax)
     PACK(INT, rcx)
-    jmp .Lappcall
+    jmp call
 2:
     ud2
 
@@ -958,7 +956,7 @@ tailapply:
     DROP
     PACK(LAMBDA, rax)
     PACK(INT, rcx)
-    jmp .Ltailappcall
+    jmp tailcall
 2:
     ud2
 
