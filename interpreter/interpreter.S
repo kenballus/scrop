@@ -507,8 +507,7 @@ cons:
     mov rdi, vm_hp
     mov qword ptr [rdi], rcx
     mov qword ptr [rdi + 8], rax
-    TAG_PAIR(rdi)
-    PUSH(rdi)
+    PACK(PAIR, rdi)
     NEXT_INSTRUCTION
 
 .section .text.car
