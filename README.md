@@ -127,15 +127,15 @@ EOF
   - returns the first thing in `l`, which must be a `cons`.
 - `(cdr l)`
   - returns the second thing in `l`, which must be a `cons`.
-- `list args`
+- `(list ...args)`
   - returns `args`
-- `map (f l)`
+- `(map f l)`
   - maps `f`, which must be a lambda, over `l`, which must be a list.
-- `fold (f i l)`
+- `(fold f i l)`
   - folds `f`, which must be a lambda, over `l`, which must be a list, with initial value `i`.
-- `foldr (f i l)`
+- `(foldr f i l)`
   - folds `f`, which must be a lambda, over `l`, which must be a list, with initial value `i`, right-associative.
-- `reverse (l)`
+- `(reverse l)`
   - reverses `l`, which must be a list.
 
 ### special forms
