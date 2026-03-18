@@ -170,10 +170,7 @@
 
 .section .text
 
-stack_overflow:
-    ud2
-
-stack_underflow:
+die:
     ud2
 
 zero_location:
@@ -192,13 +189,13 @@ interpret:
 .section .text.add
 .global add
 add:
-    UNPACK(INT, rdi, 3f) // arity
+    UNPACK(INT, rdi, die) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(0))
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rax, 3f)
+    UNPACK(INT, rax, die)
 2:
     // base case
     cmp rdi, 1
@@ -206,23 +203,21 @@ add:
     PACK(INT, rax)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rcx, 3f)
+    UNPACK(INT, rcx, die)
     add rax, rcx
     dec rdi
     jmp 2b
-3:
-    ud2
 
 .section .text.sub
 .global sub
 sub:
-    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(INT, rdi, die) // arity
     test rdi, rdi
     jne 1f
     PUSH(0)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rax, 2f)
+    UNPACK(INT, rax, die)
 1:
     cmp rdi, 1
     jne 1f
@@ -231,26 +226,24 @@ sub:
     PACK(INT, rax)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rcx, 2f)
+    UNPACK(INT, rcx, die)
     sub rax, rcx
     dec rdi
     cmp rdi, 1
     jne 1b
     PACK(INT, rax)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.mul
 .global mul
 mul:
-    UNPACK(INT, rdi, 3f) // arity
+    UNPACK(INT, rdi, die) // arity
     test rdi, rdi
     jne 1f
     PUSH(TAG_CONST_INT(1))
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rax, 3f)
+    UNPACK(INT, rax, die)
 2:
     // base case
     cmp rdi, 1
@@ -258,18 +251,16 @@ mul:
     PACK(INT, rax)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rcx, 3f)
+    UNPACK(INT, rcx, die)
     mul rcx
     dec rdi
     jmp 2b
-3:
-    ud2
 
 
 .section .text.lt
 .global lt
 lt:
-    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(INT, rdi, die) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -277,7 +268,7 @@ lt:
     PUSH(TRUE)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rax, 2f)
+    UNPACK(INT, rax, die)
     dec rdi
     test rdi, rdi
     jne 1f
@@ -285,7 +276,7 @@ lt:
     PUSH(TRUE)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rcx, 2f)
+    UNPACK(INT, rcx, die)
     cmp rax, rcx
     setl al
     and sil, al
@@ -295,13 +286,11 @@ lt:
     jne 1b
     PACK(BOOL, rsi)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.eq
 .global eq
 eq:
-    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(INT, rdi, die) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -309,7 +298,7 @@ eq:
     PUSH(TRUE)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rax, 2f)
+    UNPACK(INT, rax, die)
     dec rdi
     test rdi, rdi
     jne 1f
@@ -317,7 +306,7 @@ eq:
     PUSH(TRUE)
     NEXT_INSTRUCTION
 1:
-    UNPACK(INT, rcx, 2f)
+    UNPACK(INT, rcx, die)
     cmp rax, rcx
     sete al
     and sil, al
@@ -327,13 +316,11 @@ eq:
     jne 1b
     PACK(BOOL, rsi)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.eqp
 .global eqp
 eqp:
-    UNPACK(INT, rdi, 2f) // arity
+    UNPACK(INT, rdi, die) // arity
     mov esi, 1 // result
     test rdi, rdi
     jne 1f
@@ -359,8 +346,6 @@ eqp:
     jne 1b
     PACK(BOOL, rsi)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.load
 .global load
@@ -372,14 +357,12 @@ load:
 .section .text.zerop
 .global zerop
 zerop:
-    UNPACK(INT, rax, 1f)
+    UNPACK(INT, rax, die)
     test rax, rax
     mov eax, 0 // cannot be xor because of flags
     sete al
     PACK(BOOL, rax)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.integerp
 .global integerp
@@ -444,7 +427,7 @@ not:
 chartoint:
     POP(rax)
     JMP_IF_CHAR(rax, 1f)
-    ud2
+    jmp die
 1: // char
     UNTAG_CHAR(rax)
     PACK(INT, rax)
@@ -453,13 +436,11 @@ chartoint:
 .section .text.inttochar
 .global inttochar
 inttochar:
-    UNPACK(INT, rax, 2f)
+    UNPACK(INT, rax, die)
     cmp rax, 128
-    jae 2f
+    jae die
     PACK(CHAR, rax)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.cjump
 .global cjump
@@ -467,7 +448,7 @@ cjump:
     GET_IMMEDIATE(rax)
     POP(rcx)
     JMP_IF_BOOL(rcx, 1f)
-    ud2
+    jmp die
 1:
     cmp rcx, FALSE
     je 1f
@@ -515,7 +496,7 @@ cons:
 car:
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
-    ud2
+    jmp die
 1:
     UNTAG_PAIR(rax)
     mov rax, qword ptr [rax]
@@ -527,7 +508,7 @@ car:
 cdr:
     POP(rax)
     JMP_IF_PAIR(rax, 1f)
-    ud2
+    jmp die
 1:
     UNTAG_PAIR(rax)
     mov rax, qword ptr [rax + 8]
@@ -537,7 +518,7 @@ cdr:
 .section .text.string
 .global string
 string:
-    UNPACK(INT, rdi, 3f) // arity
+    UNPACK(INT, rdi, die) // arity
     // alloc(UP_TO_8(arity) + 8)
     sub vm_hp, rdi
     and vm_hp, -8
@@ -553,15 +534,13 @@ string:
 1:
     POP(rcx)
     JMP_IF_CHAR(rcx, 1f)
-    ud2
+    jmp die
 1:
     UNTAG_CHAR(rcx)
     mov byte ptr [rax + rsi + 8], cl
     inc rsi
     dec rdi
     jmp 2b
-3:
-    ud2
 
 .section .text.stringref
 .global stringref
@@ -601,7 +580,7 @@ stringset:
 .section .text.stringappend
 .global stringappend
 stringappend:
-    UNPACK(INT, rdx, 2f) // arity
+    UNPACK(INT, rdx, die) // arity
     test rdx, rdx
     jne 1f
     // no args
@@ -618,7 +597,7 @@ stringappend:
     cmp rcx, rdx
     je 1f
     PEEK(rsi, rcx) // args[rcx]
-    JMP_IF_NOT_STRING(rsi, 2f)
+    JMP_IF_NOT_STRING(rsi, die)
     UNTAG_STRING(rsi)
     add rax, qword ptr [rsi]
     inc rcx
@@ -633,7 +612,7 @@ stringappend:
 1:
     test rdx, rdx
     je 1f
-    UNPACK(STRING, rsi, 2f) // arg
+    UNPACK(STRING, rsi, die) // arg
     mov rcx, qword ptr [rsi] // count
     add rsi, 8
     rep movsb
@@ -643,13 +622,11 @@ stringappend:
     mov rax, vm_hp
     PACK(STRING, rax)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.vector
 .global vector
 vector:
-    UNPACK(INT, rdi, 3f) // arity
+    UNPACK(INT, rdi, die) // arity
     // alloc(arity * 8 + 8)
     neg rdi
     lea vm_hp, [vm_hp + rdi * 8 - 8]
@@ -668,42 +645,36 @@ vector:
     inc rsi
     dec rdi
     jmp 2b
-3:
-    ud2
 
 .section .text.vectorref
 .global vectorref
 vectorref:
-    UNPACK(INT, rcx, 1f) // index
-    UNPACK(VECTOR, rax, 1f) // vector
+    UNPACK(INT, rcx, die) // index
+    UNPACK(VECTOR, rax, die) // vector
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f
     mov rax, qword ptr [rax + rcx * 8 + 8]
     PUSH(rax)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.vectorset
 .global vectorset
 vectorset:
     POP(rsi) // arg
-    UNPACK(INT, rcx, 1f) // index
-    UNPACK(VECTOR, rax, 1f) // vector
+    UNPACK(INT, rcx, die) // index
+    UNPACK(VECTOR, rax, die) // vector
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f // index out of bounds
     mov qword ptr [rax + rcx * 8 + 8], rsi
     PUSH(rax)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.vectorappend
 .global vectorappend
 vectorappend:
-    UNPACK(INT, rdx, 2f) // arity
+    UNPACK(INT, rdx, die) // arity
     test rdx, rdx
     jne 1f
     // no args
@@ -720,7 +691,7 @@ vectorappend:
     cmp rcx, rdx
     je 1f
     PEEK(rsi, rcx) // args[rcx]
-    JMP_IF_NOT_VECTOR(rsi, 2f)
+    JMP_IF_NOT_VECTOR(rsi, die)
     UNTAG_VECTOR(rsi)
     add rax, qword ptr [rsi]
     inc rcx
@@ -735,7 +706,7 @@ vectorappend:
 1:
     test rdx, rdx
     je 1f
-    UNPACK(VECTOR, rsi, 2f) // arg
+    UNPACK(VECTOR, rsi, die) // arg
     mov rcx, qword ptr [rsi] // count
     add rsi, 8
     rep movsq
@@ -745,8 +716,6 @@ vectorappend:
     mov rax, vm_hp
     PACK(VECTOR, rax)
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.tailcall
 .global tailcall
@@ -759,17 +728,17 @@ tailcall:
     // lambda
     // arity       <----- vm_sp
 
-    UNPACK(INT, rdi, 2f) // num args passed
-    UNPACK(LAMBDA, rax, 2f) // lambda
+    UNPACK(INT, rdi, die) // num args passed
+    UNPACK(LAMBDA, rax, die) // lambda
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdx, 0
-    jge 3f
+    jge 2f
     mov rcx, rdi // rcx = # of passed args
     mov rsi, rdx // rsi = # of required args
     not rsi
     sub rcx, rsi
     cmp rcx, 0
-    jl 2f // too few args passed
+    jl die // too few args passed
     mov rsi, TAGGED_NULL
 1:
     PUSH(rsi)
@@ -787,9 +756,9 @@ tailcall:
 1:
     neg rdx
     jmp 1f
-3:
+2:
     cmp rdi, rdx
-    jne 2f // arity mismatch
+    jne die // arity mismatch
 1:
     // saved vm_fp <----- vm_fp
     // prev locals
@@ -835,23 +804,21 @@ tailcall:
     add vm_pc, code_base
 
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.call
 .global call
 call:
-    UNPACK(INT, rdi, 2f) // num args passed
-    UNPACK(LAMBDA, rax, 2f) // lambda
+    UNPACK(INT, rdi, die) // num args passed
+    UNPACK(LAMBDA, rax, die) // lambda
     mov rdx, qword ptr [rax + 16] // arity
     cmp rdx, 0
-    jge 3f
+    jge 2f
     mov rcx, rdi // rcx = # of passed args
     mov rsi, rdx // rsi = # of required args
     not rsi
     sub rcx, rsi
     cmp rcx, 0
-    jl 2f // too few args passed
+    jl die // too few args passed
     mov rsi, TAGGED_NULL
 1:
     PUSH(rsi)
@@ -869,9 +836,9 @@ call:
 1:
     neg rdx
     jmp 1f
-3:
+2:
     cmp rdi, rdx
-    jne 2f // arity mismatch
+    jne die // arity mismatch
 1:
 
     // unpack freevars to stack
@@ -905,14 +872,12 @@ call:
     // lambda
     // saved vm_lr    <----- vm_sp
     NEXT_INSTRUCTION
-2:
-    ud2
 
 .section .text.apply
 .global apply
 apply:
     POP(rcx)
-    UNPACK(LAMBDA, rax, 2f) // the lambda
+    UNPACK(LAMBDA, rax, die) // the lambda
     PUSH(vm_fp)
     mov vm_fp, vm_sp
     PUSH(rcx)
@@ -920,7 +885,7 @@ apply:
 1:
     cmp qword ptr [vm_sp], TAGGED_NULL
     je 1f
-    UNPACK(PAIR, rsi, 2f)
+    UNPACK(PAIR, rsi, die)
     mov rdi, qword ptr [rsi]
     mov rsi, qword ptr [rsi + 8]
     PUSH(rdi)
@@ -932,20 +897,18 @@ apply:
     PACK(LAMBDA, rax)
     PACK(INT, rcx)
     jmp call
-2:
-    ud2
 
 .section .text.tailapply
 .global tailapply
 tailapply:
     POP(rcx)
-    UNPACK(LAMBDA, rax, 2f) // the lambda
+    UNPACK(LAMBDA, rax, die) // the lambda
     PUSH(rcx)
     xor ecx, ecx
 1:
     cmp qword ptr [vm_sp], TAGGED_NULL
     je 1f
-    UNPACK(PAIR, rsi, 2f)
+    UNPACK(PAIR, rsi, die)
     mov rdi, qword ptr [rsi]
     mov rsi, qword ptr [rsi + 8]
     PUSH(rdi)
@@ -957,8 +920,6 @@ tailapply:
     PACK(LAMBDA, rax)
     PACK(INT, rcx)
     jmp tailcall
-2:
-    ud2
 
 .section .text.primapply
 .global primapply
@@ -974,7 +935,7 @@ primapply:
     // minimum arity, this will not work.
     cmp qword ptr [vm_sp], TAGGED_NULL
     je 1f
-    UNPACK(PAIR, rsi, 2f)
+    UNPACK(PAIR, rsi, die)
     mov rdi, qword ptr [rsi]
     mov rsi, qword ptr [rsi + 8]
     PUSH(rdi)
@@ -985,15 +946,13 @@ primapply:
     DROP
     PACK(INT, rcx)
     jmp rdx
-2:
-    ud2
 
 .section .text.lambda
 .global lambda
 lambda:
     GET_IMMEDIATE(rdx) // code offset
-    UNPACK(INT, rcx, 1f) // arity
-    UNPACK(VECTOR, rax, 1f) // freevar value vector
+    UNPACK(INT, rcx, die) // arity
+    UNPACK(VECTOR, rax, die) // freevar value vector
     sub vm_hp, 24
     mov qword ptr [vm_hp], rdx
     mov qword ptr [vm_hp + 8], rax
@@ -1001,8 +960,6 @@ lambda:
     mov rax, vm_hp
     PACK(LAMBDA, rax)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.return
 .global return
@@ -1015,8 +972,6 @@ return:
     POP(vm_fp)
     PUSH(rdx)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.frame
 .global frame
@@ -1029,10 +984,8 @@ frame:
 .global done
 done:
     test vm_fp, vm_fp
-    jne 2f // not in the base frame
+    jne die // not in the base frame
     mov rdi, qword ptr [vm_sp] // Grab what's on top of the stack
     mov rsp, vm_hp          // Put the stack back
     and rsp, -16             // Align the stack for a real function call
     call print_value_and_exit  // Call back into C
-2:
-    ud2
