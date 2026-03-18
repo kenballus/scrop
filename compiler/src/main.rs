@@ -1062,17 +1062,14 @@ fn main() {
     input_vec.extend_from_slice(
         b"(let* (
             (list (lambda args args)) ; isn't this cool?
-            (reverse
-                (lambda (l)
-                    ((lambdarec reverse-tail (l acc)
-                        (if (null? l)
-                            acc
-                            (reverse-tail (cdr l) (cons (car l) acc)))) l '())))
             (fold
                 (lambdarec fold (f i l)
                     (if (null? l)
                         i
                         (fold f (f (car l) i) (cdr l)))))
+            (reverse
+                (lambda (l)
+                    (fold cons '() l)))
             (foldr (lambda (f i l) (fold f i (reverse l))))
             (map
                 (lambda (f l)
