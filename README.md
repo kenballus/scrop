@@ -107,7 +107,7 @@ EOF
   - returns whether `args`, which must be integers, are equal.
 - `(eq? ...args)`
   - returns whether everything in `args` is pointer-equal. for objects that are not heap-allocated, they are pointer-equal if they hold the same value. for objects that are heap-allocated, they are pointer-equal if they are the same object.
-- `(string ...arg)s`
+- `(string ...args)`
   - constructs a string by concatenating `args`, which must be characters.
 - `(string-append ...args)`
   - constructs a string by concatenating `args`, which must be strings.
