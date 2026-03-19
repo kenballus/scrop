@@ -461,7 +461,7 @@ cjump:
 .global get
 get:
     GET_IMMEDIATE(rax) // The offset from the sp to get
-    mov rax, qword ptr [vm_sp + rax * STACK_SLOT_SIZE]
+    PEEK(rax, rax)
     PUSH(rax)
     NEXT_INSTRUCTION
 
