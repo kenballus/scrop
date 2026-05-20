@@ -545,8 +545,8 @@ string:
 .section .text.stringref
 .global stringref
 stringref:
-    UNPACK(INT, rcx, 1f) // index
-    UNPACK(STRING, rax, 1f) // index
+    UNPACK(INT, rcx, die) // index
+    UNPACK(STRING, rax, die) // index
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f
@@ -554,19 +554,17 @@ stringref:
     and rax, 0xff
     PACK(CHAR, rax)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.stringset
 .global stringset
 stringset:
     POP(rsi) // char
     JMP_IF_CHAR(rsi, 1f)
-    ud2
+    jmp die
 1:
     UNTAG_CHAR(rsi)
-    UNPACK(INT, rcx, 1f) // index
-    UNPACK(STRING, rax, 1f) // string
+    UNPACK(INT, rcx, die) // index
+    UNPACK(STRING, rax, die) // string
     mov rdi, qword ptr [rax]
     cmp rcx, rax
     jae 1f // index out of bounds
@@ -574,8 +572,6 @@ stringset:
     and rax, 0xff
     PACK(CHAR, rax)
     NEXT_INSTRUCTION
-1:
-    ud2
 
 .section .text.stringappend
 .global stringappend
