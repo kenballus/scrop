@@ -549,7 +549,7 @@ stringref:
     UNPACK(STRING, rax, die) // index
     mov rdi, qword ptr [rax]
     cmp rcx, rax
-    jae 1f
+    jae die
     mov al, byte ptr [rax + rcx + 8]
     and rax, 0xff
     PACK(CHAR, rax)
@@ -567,7 +567,7 @@ stringset:
     UNPACK(STRING, rax, die) // string
     mov rdi, qword ptr [rax]
     cmp rcx, rax
-    jae 1f // index out of bounds
+    jae die // index out of bounds
     mov byte ptr [rax + rcx + 8], sil
     and rax, 0xff
     PACK(CHAR, rax)
