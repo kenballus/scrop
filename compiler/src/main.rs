@@ -595,10 +595,8 @@ fn scan_expression_for_free_variables<'a>(
                 }
             }
         }
-        Token::Symbol(name) => {
-            if !parameters.contains(name) && env.contains_key(name) {
-                result.insert(name);
-            }
+        Token::Symbol(name) if !parameters.contains(name) && env.contains_key(name) => {
+            result.insert(name);
         }
         _ => {}
     }
