@@ -212,9 +212,6 @@ fn consume_string_literal(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
             } else if let Some(new_input) = consume_bytes(input, b"\\\"") {
                 result.push(b'"');
                 input = new_input;
-            } else if let Some(new_input) = consume_bytes(input, b"\\") {
-                result.push(b'\n');
-                input = new_input;
             } else if let Some(new_input) = consume_bytes(input, b"\"") {
                 input = new_input;
                 break;
