@@ -17,6 +17,16 @@ class Unspecified:
 
 def opcode_from_mnemonic(mnem: str) -> int:
     match mnem.upper():
+        case "MOD":
+            return 0x9ecc000
+        case "DOT":
+            return 0xd07000
+        case "TOD":
+            return 0x70d000
+        case "PUTS":
+            return 0x9075000
+        case "GETC":
+            return 0x9e7c000
         case "LOAD":
             return 0x10AD000
         case "PRIMAPPLY":

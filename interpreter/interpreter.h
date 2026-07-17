@@ -1,1 +1,1 @@
-[[noreturn]] void interpret(void *ip, void *sp);
+[[noreturn]] void interpret(void *ip, void *sp, void *fb);

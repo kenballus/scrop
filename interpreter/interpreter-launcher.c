@@ -7,23 +7,27 @@
 static void *mmap_or_die(void *const addr, size_t const len, int const prot,
                          int const flags, int const fd, off_t const off) {
     void *const result = mmap(addr, len, prot, flags, fd, off);
-    if (result <= NULL) {
+    if ((int64_t)result <= 0) {
         exit(EXIT_FAILURE);
     }
     return result;
 }
 
-void _start(void) {
+int main(int const argc, char const *const *const argv) {
+    int const input_fd = argc < 2 ? STDIN_FILENO : open(argv[1], O_RDONLY);
+    if (input_fd < 0) {
+        return EXIT_FAILURE;
+    }
     size_t capacity = PAGESIZE;
     unsigned char *const bytecode =
-        mmap_or_die(NULL, capacity, PROT_READ | PROT_WRITE,
-                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        mmap_or_die((void *)0xb17ec0de000, capacity, PROT_READ | PROT_WRITE,
+                    MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED_NOREPLACE, -1, 0);
     size_t bytes_read = 0;
     while (true) {
         ssize_t const read_rc =
-            read(STDIN_FILENO, bytecode + bytes_read, capacity - bytes_read);
+            read(input_fd, bytecode + bytes_read, capacity - bytes_read);
         if (read_rc < 0) {
-            exit(EXIT_FAILURE);
+            return EXIT_FAILURE;
         }
         if (read_rc == 0) {
             break;
@@ -38,13 +42,23 @@ void _start(void) {
     }
 
     if (mprotect(bytecode, capacity, PROT_READ) != 0) {
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
 
     uint8_t *const stack =
-        mmap_or_die(NULL, PAGESIZE, PROT_READ | PROT_WRITE,
-                    MAP_ANONYMOUS | MAP_PRIVATE | MAP_GROWSDOWN, -1, 0);
-    interpret(bytecode, stack + PAGESIZE);
+        mmap_or_die((void *)0x57ac57ac000, PAGESIZE, PROT_READ | PROT_WRITE,
+                    MAP_ANONYMOUS | MAP_PRIVATE | MAP_GROWSDOWN | MAP_FIXED_NOREPLACE, -1, 0);
+
+    int const fb_fd = open("/dev/fb0", O_RDWR);
+    if (fb_fd < 0) {
+        return EXIT_FAILURE;
+    }
+    void *fb = mmap(NULL, 1920 * 1080 * 4, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0);
+    if ((int64_t)fb < 0) {
+        fb = NULL;
+    }
+
+    interpret(bytecode, stack + PAGESIZE, fb);
 }
 
 static void write_or_die(int const fd, void const *const buf,

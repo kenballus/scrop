@@ -75,6 +75,11 @@ impl Primitive<'_> {
                 minimum_arity: 0,
                 is_variadic: true,
             }),
+            b"modulo" => Some(Primitive {
+                mnemonic: "MOD",
+                minimum_arity: 2,
+                is_variadic: false,
+            }),
             b"*" => Some(Primitive {
                 mnemonic: "MUL",
                 minimum_arity: 0,
@@ -148,6 +153,26 @@ impl Primitive<'_> {
             b"cdr" => Some(Primitive {
                 mnemonic: "CDR",
                 minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"getc" => Some(Primitive {
+                mnemonic: "GETC",
+                minimum_arity: 0,
+                is_variadic: false,
+            }),
+            b"puts" => Some(Primitive {
+                mnemonic: "PUTS",
+                minimum_arity: 1,
+                is_variadic: false,
+            }),
+            b"dot" => Some(Primitive {
+                mnemonic: "DOT",
+                minimum_arity: 5,
+                is_variadic: false,
+            }),
+            b"tod" => Some(Primitive {
+                mnemonic: "TOD",
+                minimum_arity: 2,
                 is_variadic: false,
             }),
             _ => None,
@@ -368,11 +393,8 @@ fn consume_nested_comment(input: &[u8]) -> Option<&[u8]> {
                 return Some(input);
             }
             if input.starts_with(b"#|") {
-                if let Some(new_input) = consume_nested_comment(input) {
-                    input = new_input;
-                } else {
-                    return None;
-                }
+                let new_input = consume_nested_comment(input)?;
+                input = new_input;
             } else {
                 input = &input[1..];
             }
@@ -990,7 +1012,7 @@ fn lower_expression<'a>(
                     }
                     code.extend_from_slice(b"))");
                     let mut ast = parse(code.as_slice());
-                    assert!(ast.len() == 1);
+                    assert_eq!(ast.len(), 1);
                     lower_expression(ast.remove(0), env, instructions_emitted, is_tail)
                 }
             } else {

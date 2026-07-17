@@ -1,0 +1,64 @@
+(let*
+  (
+    (draw-rightward-line
+      (lambdarec draw-rightward-line (row col length r g b)
+        (if (not (= 0 length))
+          (begin
+            (dot r g b row col)
+            (draw-rightward-line row (+ col 1) (- length 1) r g b)
+          )
+        )
+      )
+    )
+    (draw-downward-line
+      (lambdarec draw-downward-line (row col length r g b)
+        (if (not (= 0 length))
+          (begin
+            (dot r g b row col)
+            (draw-downward-line (+ row 1) col (- length 1) r g b)
+          )
+        )
+      )
+    )
+    (draw-filled-rectangle
+      (lambdarec draw-filled-rectangle (row col width height r g b)
+        (if (not (= width 0))
+          (if (not (= height 0))
+            (begin
+              (draw-rightward-line row col width r g b)
+              (draw-filled-rectangle (+ row 1) col width (- height 1) r g b)
+            )
+          )
+        )
+      )
+    )
+    (draw-filled-square
+      (lambda (row col length r g b)
+        (draw-filled-rectangle row col length length r g b)
+      )
+    )
+    (draw-rectangle
+      (lambda (row col width height r g b)
+        (draw-rightward-line row col width r g b)
+        (draw-downward-line row (+ col width) height r g b)
+        (draw-rightward-line (+ row height) col width r g b)
+        (draw-downward-line row col height r g b)
+      )
+    )
+    (draw-H
+      (lambda (row col unit-length r g b)
+        (draw-filled-rectangle row col unit-length (* unit-length 3) r g b)
+        (draw-rectangle row col unit-length (* unit-length 3) 255 255 255)
+        (draw-filled-square (+ row unit-length) (+ col unit-length) unit-length r g b)
+        (draw-rightward-line (+ row unit-length) (+ col unit-length) unit-length 255 255 255)
+        (draw-filled-rectangle row (+ col (* unit-length 2)) unit-length (* unit-length 3) r g b)
+        (draw-rectangle row (+ col (* unit-length 2)) unit-length (* unit-length 3) 255 255 255)
+      )
+    )
+  )
+
+  ((lambdarec mainloop (row col unit-size)
+    (draw-H row col unit-size 0 0 255)
+    (mainloop (modulo (+ row 1) 1080) (modulo (+ col 1) 1920) unit-size)
+  ) 0 0 100)
+)

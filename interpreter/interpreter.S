@@ -7,7 +7,7 @@
 #define vm_hp rbp
 #define vm_fp r12
 #define vm_lr r13
-
+#define vm_fb r14
 #define code_base r15
 
 // Each instruction is a 64-bit opcode and a maybe-unused 64-bit immediate.
@@ -181,9 +181,114 @@ interpret:
     mov vm_hp, rsp   // vm heap pointer
     mov vm_pc, rdi   // vm instruction pointer
     mov vm_sp, rsi   // vm stack pointer
+    mov vm_fb, rdx   // framebuffer
     xor vm_fp, vm_fp // vm frame pointer
     xor vm_lr, vm_lr // vm frame pointer
     mov code_base, vm_pc // code_base
+    NEXT_INSTRUCTION
+
+.section .text.tod
+.global tod
+tod:
+    UNPACK(INT, r9, die) // column
+    UNPACK(INT, r8, die) // row
+
+    test vm_fb, vm_fb
+    je 1f
+
+    imul r8, r8, 1920 // assumes 1920x1080 framebuffer :)
+    add r8, r9
+
+    // check out of bounds
+    cmp r8, 1920 * 1080
+    jae 1f
+
+    shl r8, 2 // multiply by 4 to account for the "word size" of the fb
+
+    mov eax, dword ptr [r14 + r8]
+
+    PACK(INT, rax)
+    NEXT_INSTRUCTION
+
+.section .text.dot
+.global dot
+dot:
+    UNPACK(INT, r9, die)  // column
+    UNPACK(INT, r8, die)  // row
+    UNPACK(INT, rdi, die) // R (truncated to byte)
+    UNPACK(INT, rdx, die) // G (truncated to byte)
+    UNPACK(INT, rsi, die) // B (truncated to byte)
+
+    // if there's no framebuffer, bail
+    test vm_fb, vm_fb
+    je 1f
+
+    // compute the offset into the fb device
+    imul r8, r8, 1920 // assumes 1920x1080 framebuffer :)
+    add r8, r9
+
+    // check out of bounds
+    cmp r8, 1920 * 1080
+    jae 1f
+
+    shl r8, 2 // multiply by 4 to account for the "word size" of the fb
+
+    xor ecx, ecx
+    mov cl, sil
+    shl ecx, 16
+    mov cl, dil
+    mov ch, dl
+    mov dword ptr [r14 + r8], ecx
+
+1:
+    PUSH(UNSPECIFIED)
+    NEXT_INSTRUCTION
+
+.section .text.puts
+.global puts
+puts:
+    UNPACK(STRING, rdi, die)
+    mov rdx, qword ptr [rdi]
+    lea rsi, [rdi + 8]
+    mov edi, 1 // STDOUT_FILENO
+    mov eax, 1 // SYS_write
+    syscall
+
+    mov edx, 1
+    lea rsi, [1f]
+    mov eax, 1 // SYS_write
+    syscall
+
+    PUSH(UNSPECIFIED)
+    NEXT_INSTRUCTION
+1:
+    .byte 10
+
+.section .text.getc
+.global getc
+getc:
+    PUSH(0)
+    mov edi, 0 // STDIN_FILENO
+    mov rsi, vm_sp // destination
+    mov edx, 1 // length
+    xor eax, eax // SYS_read
+    syscall
+    cmp rax, 1
+    jne die
+    POP(rcx)
+    PACK(CHAR, rcx)
+    NEXT_INSTRUCTION
+
+.section .text.mod
+.global mod
+mod:
+    UNPACK(INT, rdi, die)
+    UNPACK(INT, rax, die)
+
+    xor edx, edx
+    idiv rdi
+
+    PACK(INT, rdx)
     NEXT_INSTRUCTION
 
 .section .text.add

@@ -1,0 +1,120 @@
+(let*
+  (
+    (draw-rightward-line
+      (lambdarec draw-rightward-line (row col length r g b)
+        (if (not (= 0 length))
+          (begin
+            (dot r g b row col)
+            (draw-rightward-line row (+ col 1) (- length 1) r g b)
+          )
+        )
+      )
+    )
+    (draw-downward-line
+      (lambdarec draw-downward-line (row col length r g b)
+        (if (not (= 0 length))
+          (begin
+            (dot r g b row col)
+            (draw-downward-line (+ row 1) col (- length 1) r g b)
+          )
+        )
+      )
+    )
+    (draw-downrightward-line
+      (lambdarec draw-downrightward-line (row col length r g b)
+        (if (not (= 0 length))
+          (begin
+            (dot r g b row col)
+            (draw-downrightward-line (+ row 1) (+ col 1) (- length 1) r g b)
+          )
+        )
+      )
+    )
+    (draw-downleftward-line
+      (lambdarec draw-downleftward-line (row col length r g b)
+        (if (not (= 0 length))
+          (begin
+            (dot r g b row col)
+            (draw-downleftward-line (+ row 1) (- col 1) (- length 1) r g b)
+          )
+        )
+      )
+    )
+    (draw-filled-rectangle
+      (lambdarec draw-filled-rectangle (row col width height r g b)
+        (if (not (= width 0))
+          (if (not (= height 0))
+            (begin
+              (draw-rightward-line row col width r g b)
+              (draw-filled-rectangle (+ row 1) col width (- height 1) r g b)
+            )
+          )
+        )
+      )
+    )
+    (draw-filled-square
+      (lambda (row col length r g b)
+        (draw-filled-rectangle row col length length r g b)
+      )
+    )
+    (draw-guy
+      (lambda (row col unit-length r g b)
+        ; arms
+        (draw-downrightward-line row (+ col unit-length) unit-length r g b)
+        (draw-downleftward-line row (+ col unit-length) unit-length r g b)
+        ; body
+        (draw-downward-line row (+ col unit-length) (* unit-length 2) r g b)
+        ; legs
+        (draw-downrightward-line (+ row (* unit-length 2)) (+ col unit-length) unit-length r g b)
+        (draw-downleftward-line (+ row (* unit-length 2)) (+ col unit-length) unit-length r g b)
+        ; head
+        (draw-filled-square (- row unit-length) (+ col unit-length) unit-length r g b)
+      )
+    )
+    (rightward-line-is-all-val
+      (lambdarec rightward-line-is-all-val (row col length val)
+        (if (not (= length 0))
+          (if (= val (tod row col))
+            (rightward-line-is-all-val row (+ col 1) (- length 1) val)
+            #f
+          )
+          #t
+        )
+      )
+    )
+    (filled-rectangle-is-all-val
+      (lambdarec filled-rectangle-is-all-same (row col width height val)
+        (if (not (= height 0))
+          (if (not (= width 0))
+            (if (rightward-line-is-all-val row col width val)
+              (filled-rectangle-is-all-same (+ row 1) col width (- height 1) val)
+              #f
+            )
+            #t
+          )
+          #t
+        )
+      )
+    )
+  )
+
+  ((lambdarec mainloop (row col unit-size)
+    (draw-guy row col unit-size 0 255 255) ; draw guy
+    (let ((c (getc)))
+      (draw-guy row col unit-size 0 0 0) ; erase previous guy
+      (let (
+        (new_row
+          (+ row (if (eq? c #\s) 5 (if (eq? c #\w) -5 0))))
+        (new_col
+          (+ col (if (eq? c #\d) 5 (if (eq? c #\a) -5 0))))
+      )
+        (if (filled-rectangle-is-all-val new_row new_col (* 2 unit-size) (* 2 unit-size) (tod row col))
+          (mainloop
+            (modulo new_row 1080)
+            (modulo new_col 1920)
+            unit-size
+          )
+        )
+      )
+    )) 500 500 10)
+)

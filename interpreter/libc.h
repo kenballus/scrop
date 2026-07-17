@@ -25,9 +25,14 @@ typedef long long off_t;
 #define PROT_WRITE 2
 
 #define MAP_ANONYMOUS 0x20
+#define MAP_SHARED 0x1
 #define MAP_PRIVATE 0x2
 #define MAP_FIXED_NOREPLACE 0x100000
 #define MAP_GROWSDOWN 0x100
+
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR   2
 
 #define NULL ((void *)0)
 
@@ -40,3 +45,5 @@ int mprotect(void *addr, size_t len, int prot);
 ssize_t read(int fd, void *buf, size_t count);
 
 ssize_t write(int fd, void const *buf, size_t count);
+
+int open(char const *path, int flags, ... /* mode_t mode */);

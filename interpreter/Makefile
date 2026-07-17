@@ -5,8 +5,8 @@ TARGET := interpreter
 all: $(TARGET)
 
 CC := clang
-CFLAGS := -O0 -std=c23 -Wall -Wextra -Wpedantic -Wvla -Wshadow -Wno-c2y-extensions -fno-stack-protector -MMD -MP
-LDFLAGS := -T layout.ld -static -nostdlib
+CFLAGS := -O2 -std=c23 -Wall -Wextra -Wpedantic -Wvla -Wshadow -Wno-c2y-extensions -fno-stack-protector -MMD -MP
+LDFLAGS := -T layout.ld -static -nostdlib -e _start
 
 SRCS := $(wildcard *.c) $(wildcard *.S)
 OBJS := $(addsuffix .o, $(basename $(SRCS)))

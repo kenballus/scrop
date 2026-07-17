@@ -3,6 +3,31 @@ SECTIONS {
     .text : {
     }
 
+    . = 0x9ecc000;
+    .text.mod : {
+        *(mod)
+    }
+
+    . = 0x70d000;
+    .text.tod : {
+        *(tod)
+    }
+
+    . = 0xd07000;
+    .text.dot : {
+        *(dot)
+    }
+
+    . = 0x9075000;
+    .text.puts : {
+        *(puts)
+    }
+
+    . = 0x9e7c000;
+    .text.getc : {
+        *(getc)
+    }
+
     . = 0x9a99000;
     .text.primapply : {
         *(primapply)
